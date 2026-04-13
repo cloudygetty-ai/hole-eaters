@@ -176,7 +176,7 @@ export default function HoleEatersApp() {
 
   const sendMsg=()=>{ if(!chatMsg.trim()&&!mediaPreview) return; setMsgs(p=>[...p,{from:"me",text:chatMsg.trim(),t:timestamp(),...(mediaPreview?{media:mediaPreview}:{})}]); setChatMsg("");setMediaPreview(null); setTyping(true); setTimeout(()=>{ setTyping(false); setMsgs(p=>[...p,{from:"them",text:REPLIES[Math.floor(Math.random()*REPLIES.length)],t:timestamp(),...(Math.random()<.2?{media:{type:"image",placeholder:true}}:{})}]); },800+Math.random()*1200); };
   const handleFile=e=>{ const f=e.target.files?.[0]; if(!f) return; const r=new FileReader(); r.onload=()=>setMediaPreview({type:f.type.startsWith("video")?"video":"image",url:r.result,name:f.name}); r.readAsDataURL(f); };
-  const handleProfileVideo=e=>{ const f=e.target.files?.[0]; if(!f) return; if(!f.type.startsWith("video")){alert("Please select a video file");return;} if(f.size>10*1024*1024){alert("Video must be under 10MB");return;} const r=new FileReader(); r.onload=()=>setMe(p=>({...p,profileVideo:r.result})); r.readAsDataURL(f); };
+  const handleProfileVideo=e=>{ const f=e.target.files?.[0]; if(!f) return; if(!f.type.startsWith("video")){alert("Please select a video file");return;} if(f.size>100*1024*1024){alert("Video must be under 100MB");return;} const r=new FileReader(); r.onload=()=>setMe(p=>({...p,profileVideo:r.result})); r.readAsDataURL(f); };
   const removeProfileVideo=()=>setMe(p=>({...p,profileVideo:null}));
   const toggleCam=()=>{const t=streamRef.current?.getVideoTracks();if(t?.[0]){t[0].enabled=!t[0].enabled;setCamOn(t[0].enabled);}};
   const toggleMic=()=>{const t=streamRef.current?.getAudioTracks();if(t?.[0]){t[0].enabled=!t[0].enabled;setMicOn(t[0].enabled);}};
@@ -538,7 +538,7 @@ export default function HoleEatersApp() {
               ):(
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <div style={{width:80,height:80,borderRadius:8,border:`1px dashed ${C.border}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,background:C.surface2}} onClick={()=>profileVidRef.current?.click()}><span style={{fontSize:24,marginBottom:4}}>📹</span><span style={{fontSize:8,color:C.dim}}>Upload</span></div>
-                  <div><div style={{fontSize:11,color:C.muted}}>Add a short video clip</div><div style={{fontSize:10,color:C.dim,marginTop:2}}>Loops silently on your map pin. Max 10MB.</div></div>
+                  <div><div style={{fontSize:11,color:C.muted}}>Add a short video clip</div><div style={{fontSize:10,color:C.dim,marginTop:2}}>Loops silently on your map pin. Max 100MB.</div></div>
                 </div>
               )}
             </div>
