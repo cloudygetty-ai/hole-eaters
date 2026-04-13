@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 
 // ─── TOKENS ─────────────────────────────────────────────────────────────────
 const C = {
@@ -90,7 +92,17 @@ const USERS = [
   { id:12, name:"RimJobRonnie",   age:36, role:"Oral",     bio:"Face first. No apologies. Grade A.",             tags:["oral","rim","skilled"],   avatar:"😛", online:false, away:false, dist:"280m", color:"#0ea5e9", photos:1, lastSeen:"3h",   profileVideo:null },
 ];
 const ME_INIT = { id:0, name:"You", age:28, role:"Vers", bio:"New here. Curious. Down for whatever with the right vibe.", tags:["vers","clean","discreet"], avatar:"😏", online:true, away:false, color:"#f59e0b", lookingFor:"hookup", safeOnly:true, profileVideo:null };
-const POSITIONS = [{x:50,y:50},{x:53,y:46},{x:46,y:54},{x:62,y:43},{x:37,y:57},{x:66,y:61},{x:34,y:39},{x:71,y:47},{x:44,y:67},{x:56,y:33},{x:29,y:59},{x:73,y:36},{x:41,y:28}];
+// Mapbox
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || "";
+const DEFAULT_CENTER = [-74.006, 40.7128]; // NYC fallback
+
+// User positions as lat/lng offsets from center
+const USER_OFFSETS = [
+  [0,0], // ME placeholder
+  [0.003,0.002],[-.002,0.003],[0.005,-0.002],[-0.004,0.004],
+  [0.006,0.005],[-0.003,-0.002],[0.007,0.001],[-0.002,0.006],
+  [0.004,-0.004],[-0.005,0.003],[0.008,-0.003],[-0.003,-0.005],
+];
 const BLOCKS = [{left:"8%",top:"12%",width:"18%",height:"14%"},{left:"30%",top:"8%",width:"12%",height:"10%"},{left:"55%",top:"10%",width:"22%",height:"12%"},{left:"80%",top:"18%",width:"14%",height:"18%"},{left:"5%",top:"35%",width:"14%",height:"20%"},{left:"24%",top:"28%",width:"10%",height:"8%"},{left:"74%",top:"38%",width:"18%",height:"14%"},{left:"8%",top:"62%",width:"16%",height:"16%"},{left:"30%",top:"68%",width:"14%",height:"12%"},{left:"60%",top:"65%",width:"20%",height:"16%"},{left:"82%",top:"58%",width:"12%",height:"22%"},{left:"45%",top:"74%",width:"10%",height:"10%"}];
 const FILTERS = ["All","Online","Top","Bottom","Vers","Oral","Bear","Hosting","<100m"];
 const REPLIES = ["👀 hey","Sounds good","Where are you?","Host or travel?","Pic?","What are you into?","Be there in 10","Send location","Discreet?","Let's do it","🔥🔥🔥","You close?","Come over","Nice 👀"];
@@ -109,6 +121,11 @@ const KF = `
 @keyframes glow{0%,100%{box-shadow:0 0 8px rgba(245,158,11,.3)}50%{box-shadow:0 0 20px rgba(245,158,11,.6)}}
 @keyframes vidRing{0%,100%{box-shadow:0 0 0 2px rgba(239,68,68,0.4),0 0 6px rgba(239,68,68,0.2)}50%{box-shadow:0 0 0 2px rgba(239,68,68,0.9),0 0 12px rgba(239,68,68,0.5)}}
 @keyframes radarSweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.mapboxgl-ctrl-bottom-left,.mapboxgl-ctrl-bottom-right .mapboxgl-ctrl-attrib{display:none!important}
+.mapboxgl-ctrl-group{background:rgba(13,15,20,0.92)!important;border:1px solid #222530!important;border-radius:6px!important}
+.mapboxgl-ctrl-group button{color:#e8e4d8!important}
+.mapboxgl-ctrl-group button+button{border-top:1px solid #222530!important}
+.mapboxgl-user-location-dot{box-shadow:0 0 0 6px rgba(245,158,11,0.2)!important}
 `;
 
 // ─── APP ────────────────────────────────────────────────────────────────────
@@ -137,10 +154,74 @@ export default function HoleEatersApp() {
   const [aiIcebreakers,setAiIcebreakers]=useState({});
   const chatEnd=useRef(null); const fileRef=useRef(null); const profileVidRef=useRef(null);
   const vidRef=useRef(null); const streamRef=useRef(null);
+  const mapContainer=useRef(null); const mapRef=useRef(null); const markersRef=useRef([]);
+  const [userLoc,setUserLoc]=useState(null);
 
   const filtered=filterUsers(USERS,filter);
   const toggleLike=id=>setLiked(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
   useEffect(()=>{chatEnd.current?.scrollIntoView({behavior:"smooth"});},[msgs,typing]);
+
+  // GPS
+  useEffect(()=>{
+    if(!boarded) return;
+    if(!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      pos=>setUserLoc([pos.coords.longitude,pos.coords.latitude]),
+      ()=>setUserLoc(DEFAULT_CENTER),
+      {enableHighAccuracy:true,timeout:8000}
+    );
+  },[boarded]);
+
+  // Mapbox init
+  useEffect(()=>{
+    if(!boarded||tab!=="map"||!mapContainer.current) return;
+    if(mapRef.current) { mapRef.current.resize(); return; }
+
+    mapboxgl.accessToken=MAPBOX_TOKEN;
+    const center=userLoc||DEFAULT_CENTER;
+    const map=new mapboxgl.Map({
+      container:mapContainer.current,
+      style:"mapbox://styles/mapbox/dark-v11",
+      center,
+      zoom:15,
+      pitch:20,
+      attributionControl:false,
+    });
+    map.addControl(new mapboxgl.NavigationControl({showCompass:false}),"bottom-right");
+    map.addControl(new mapboxgl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showUserHeading:true}),"bottom-right");
+    mapRef.current=map;
+
+    map.on("load",()=>{
+      // My marker
+      const myEl=document.createElement("div");
+      myEl.innerHTML=`<div style="width:42px;height:42px;border-radius:50%;background:rgba(245,158,11,0.15);border:3px solid #f59e0b;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 0 0 6px rgba(245,158,11,0.15),0 0 20px rgba(245,158,11,0.3);animation:pulse 2.5s ease-out infinite;position:relative"><span>${me.avatar}</span></div>`;
+      new mapboxgl.Marker({element:myEl}).setLngLat(center).addTo(map);
+
+      // User markers
+      filtered.forEach((u,i)=>{
+        const off=USER_OFFSETS[i+1]||[Math.random()*0.008-0.004,Math.random()*0.008-0.004];
+        const lng=center[0]+off[0];
+        const lat=center[1]+off[1];
+
+        const el=document.createElement("div");
+        el.style.cssText="cursor:pointer;transition:transform .15s";
+        const statusCol=u.online?(u.away?"#f59e0b":"#22c55e"):"#374151";
+        const opacity=u.online?1:0.5;
+        const vidBorder=u.profileVideo?"animation:vidRing 2s ease infinite;":"";
+        el.innerHTML=`<div style="width:38px;height:38px;border-radius:50%;background:${u.color}22;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 0 0 2px ${statusCol},0 4px 12px rgba(0,0,0,0.4);opacity:${opacity};position:relative;${vidBorder}"><span>${u.avatar}</span><div style="position:absolute;bottom:0;right:0;width:9px;height:9px;border-radius:50%;background:${statusCol};border:1.5px solid #090b0f"></div></div>`;
+
+        el.addEventListener("click",(e)=>{
+          e.stopPropagation();
+          setSelected(u);setMsgs([]);setDrawerTab("Profile");
+        });
+
+        const marker=new mapboxgl.Marker({element:el}).setLngLat([lng,lat]).addTo(map);
+        markersRef.current.push(marker);
+      });
+    });
+
+    return ()=>{};
+  },[boarded,tab,userLoc,filtered.length]);
 
   useEffect(()=>{ if(!boarded) return; const iv=setInterval(()=>{ const u=USERS[Math.floor(Math.random()*USERS.length)]; if(u.online){ const m=[`${u.name} just went online`,`${u.name} is nearby (${u.dist})`,`${u.name} viewed your profile`,`${u.name} liked you`]; setNotif({text:m[Math.floor(Math.random()*m.length)],icon:u.avatar}); setTimeout(()=>setNotif(null),3000); } },12000+Math.random()*8000); return ()=>clearInterval(iv); },[boarded]);
 
@@ -255,33 +336,7 @@ export default function HoleEatersApp() {
 
       {/* MAP */}
       {tab==="map"&&(
-        <div style={S.mapWrap} onClick={e=>{if(e.target===e.currentTarget)setSelected(null)}}>
-          <div style={S.mapBg}/><div style={S.mapGrid}/><div style={S.mapRoads}/><div style={S.heatmap}/>
-          {BLOCKS.map((b,i)=><div key={i} style={{position:"absolute",background:"#0f1117",border:"1px solid rgba(245,158,11,0.05)",borderRadius:3,...b}}/>)}
-          <div style={S.zoomCtrl}>
-            <button style={S.zoomBtn} onClick={()=>setZoom(z=>Math.min(z+.2,2))}>+</button>
-            <button style={S.zoomBtn} onClick={()=>setZoom(z=>Math.max(z-.2,.6))}>−</button>
-            <button style={S.zoomBtn} onClick={()=>setZoom(1)}>⊙</button>
-          </div>
-          <div style={{position:"absolute",inset:0,transition:"transform .3s",transform:`scale(${zoom})`,transformOrigin:"center center"}}>
-            <div style={{...S.pin,left:"50%",top:"50%"}}>
-              <div style={S.pulseRing}/>
-              <VideoAvatar user={me} size={38} borderColor={C.accent} showStatus={false}/>
-              <div style={S.pinLabel}>YOU</div>
-            </div>
-            {filtered.map((u,i)=>{
-              const p=POSITIONS[i+1]||{x:30+Math.random()*40,y:30+Math.random()*40};
-              const sel=selected?.id===u.id;
-              return(
-                <div key={u.id} style={{...S.pin,left:`${p.x}%`,top:`${p.y}%`,transform:`translate(-50%,-50%) scale(${sel?1.25:1})`,zIndex:sel?30:10,transition:"transform .15s"}} onClick={e=>{e.stopPropagation();setSelected(u);setMsgs([]);setDrawerTab("Profile")}}>
-                  <VideoAvatar user={u} size={38} showStatus={true}/>
-                  {sel&&<div style={S.pinLabel}>{u.name}</div>}
-                </div>
-              );
-            })}
-          </div>
-          <div style={S.ring100}/><div style={S.ring200}/>
-        </div>
+        <div ref={mapContainer} style={{flex:1,position:"relative"}}/>
       )}
 
       {/* LIST */}
