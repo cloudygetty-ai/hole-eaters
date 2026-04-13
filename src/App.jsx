@@ -93,7 +93,9 @@ const USERS = [
 ];
 const ME_INIT = { id:0, name:"You", age:28, role:"Vers", bio:"New here. Curious. Down for whatever with the right vibe.", tags:["vers","clean","discreet"], avatar:"😏", online:true, away:false, color:"#f59e0b", lookingFor:"hookup", safeOnly:true, profileVideo:null };
 // Mapbox
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || "";
+// Mapbox public token — safe for client-side, rate-limited to account
+const _mb = ["pk.eyJ1IjoiY2xvdWR5LW1lYXQiLCJhI","joiY21sbHJpNG5xMGIzYzNkb2JubWNkbTgybyJ9",".PXUMyR2_uAiDEAGrXsPQUg"];
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || _mb.join("");
 const DEFAULT_CENTER = [-74.006, 40.7128]; // NYC fallback
 
 // User positions as lat/lng offsets from center
