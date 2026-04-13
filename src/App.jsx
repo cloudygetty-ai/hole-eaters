@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { Analytics } from "@vercel/analytics/react";
 
 // ─── TOKENS ─────────────────────────────────────────────────────────────────
 const C = {
@@ -614,6 +615,7 @@ export default function HoleEatersApp() {
       )}
 
       {notif&&(<div style={{position:"absolute",top:68,right:14,zIndex:200,animation:"notifSlide .35s ease"}}><div style={{display:"flex",alignItems:"center",gap:9,background:"rgba(16,18,28,0.97)",border:`1px solid ${C.border}`,padding:"10px 14px",borderRadius:12,backdropFilter:"blur(14px)",boxShadow:"0 8px 32px rgba(0,0,0,.55)",maxWidth:260}}><span style={{fontSize:20,flexShrink:0}}>{notif.icon}</span><span style={{fontSize:11,color:C.text,lineHeight:1.45}}>{notif.text}</span></div></div>)}
+      <Analytics />
     </div>
   );
 }
