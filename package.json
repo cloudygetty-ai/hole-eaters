@@ -16,5 +16,18 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
     "vite": "^6.0.0"
-  }
+  },
+  "description": "Location-based anonymous hookup map PWA \u2014 real-time pins, proximity discovery, privacy-first",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cloudygetty-ai/hole-eaters.git"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "pwa",
+    "location",
+    "map",
+    "vite",
+    "react"
+  ]
 }
