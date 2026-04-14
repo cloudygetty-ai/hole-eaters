@@ -166,44 +166,75 @@ export default function HoleEatersApp() {
   // GPS
   useEffect(()=>{
     if(!boarded) return;
-    if(!navigator.geolocation) return;
+    if(!navigator.geolocation) { setUserLoc(DEFAULT_CENTER); return; }
     navigator.geolocation.getCurrentPosition(
       pos=>setUserLoc([pos.coords.longitude,pos.coords.latitude]),
       ()=>setUserLoc(DEFAULT_CENTER),
-      {enableHighAccuracy:true,timeout:8000}
+      {enableHighAccuracy:true,timeout:10000}
     );
   },[boarded]);
 
-  // Mapbox init
+  // Mapbox init — waits for userLoc to resolve
   useEffect(()=>{
-    if(!boarded||tab!=="map"||!mapContainer.current) return;
-    if(mapRef.current) { mapRef.current.resize(); return; }
+    if(!boarded||tab!=="map"||!mapContainer.current||!userLoc) return;
+
+    // If map exists, fly to new location and re-place markers
+    if(mapRef.current) {
+      mapRef.current.resize();
+      mapRef.current.flyTo({center:userLoc,zoom:15,duration:1500});
+      // Clear old markers and re-add
+      markersRef.current.forEach(m=>m.remove());
+      markersRef.current=[];
+      // Re-add my marker
+      const myEl=document.createElement("div");
+      myEl.innerHTML=`<div style="width:42px;height:42px;border-radius:50%;background:rgba(245,158,11,0.15);border:3px solid #f59e0b;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 0 0 6px rgba(245,158,11,0.15),0 0 20px rgba(245,158,11,0.3);animation:pulse 2.5s ease-out infinite;position:relative"><span>${me.avatar}</span></div>`;
+      const myMarker=new mapboxgl.Marker({element:myEl}).setLngLat(userLoc).addTo(mapRef.current);
+      markersRef.current.push(myMarker);
+      // Re-add user markers
+      filtered.forEach((u,i)=>{
+        const off=USER_OFFSETS[i+1]||[Math.random()*0.008-0.004,Math.random()*0.008-0.004];
+        const el=document.createElement("div");
+        el.style.cssText="cursor:pointer;transition:transform .15s";
+        const statusCol=u.online?(u.away?"#f59e0b":"#22c55e"):"#374151";
+        const opacity=u.online?1:0.5;
+        const vidBorder=u.profileVideo?"animation:vidRing 2s ease infinite;":"";
+        el.innerHTML=`<div style="width:38px;height:38px;border-radius:50%;background:${u.color}22;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 0 0 2px ${statusCol},0 4px 12px rgba(0,0,0,0.4);opacity:${opacity};position:relative;${vidBorder}"><span>${u.avatar}</span><div style="position:absolute;bottom:0;right:0;width:9px;height:9px;border-radius:50%;background:${statusCol};border:1.5px solid #090b0f"></div></div>`;
+        el.addEventListener("click",()=>{setSelected(u);setMsgs([]);setDrawerTab("Profile");});
+        const marker=new mapboxgl.Marker({element:el}).setLngLat([userLoc[0]+off[0],userLoc[1]+off[1]]).addTo(mapRef.current);
+        markersRef.current.push(marker);
+      });
+      return;
+    }
 
     mapboxgl.accessToken=MAPBOX_TOKEN;
-    const center=userLoc||DEFAULT_CENTER;
     const map=new mapboxgl.Map({
       container:mapContainer.current,
       style:"mapbox://styles/mapbox/dark-v11",
-      center,
+      center:userLoc,
       zoom:15,
       pitch:20,
       attributionControl:false,
     });
     map.addControl(new mapboxgl.NavigationControl({showCompass:false}),"bottom-right");
-    map.addControl(new mapboxgl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showUserHeading:true}),"bottom-right");
+    const geoCtrl=new mapboxgl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showUserHeading:true});
+    map.addControl(geoCtrl,"bottom-right");
     mapRef.current=map;
 
     map.on("load",()=>{
+      // Auto-trigger geolocate
+      geoCtrl.trigger();
+
       // My marker
       const myEl=document.createElement("div");
       myEl.innerHTML=`<div style="width:42px;height:42px;border-radius:50%;background:rgba(245,158,11,0.15);border:3px solid #f59e0b;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 0 0 6px rgba(245,158,11,0.15),0 0 20px rgba(245,158,11,0.3);animation:pulse 2.5s ease-out infinite;position:relative"><span>${me.avatar}</span></div>`;
-      new mapboxgl.Marker({element:myEl}).setLngLat(center).addTo(map);
+      const myMarker=new mapboxgl.Marker({element:myEl}).setLngLat(userLoc).addTo(map);
+      markersRef.current.push(myMarker);
 
       // User markers
       filtered.forEach((u,i)=>{
         const off=USER_OFFSETS[i+1]||[Math.random()*0.008-0.004,Math.random()*0.008-0.004];
-        const lng=center[0]+off[0];
-        const lat=center[1]+off[1];
+        const lng=userLoc[0]+off[0];
+        const lat=userLoc[1]+off[1];
 
         const el=document.createElement("div");
         el.style.cssText="cursor:pointer;transition:transform .15s";
@@ -212,8 +243,7 @@ export default function HoleEatersApp() {
         const vidBorder=u.profileVideo?"animation:vidRing 2s ease infinite;":"";
         el.innerHTML=`<div style="width:38px;height:38px;border-radius:50%;background:${u.color}22;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 0 0 2px ${statusCol},0 4px 12px rgba(0,0,0,0.4);opacity:${opacity};position:relative;${vidBorder}"><span>${u.avatar}</span><div style="position:absolute;bottom:0;right:0;width:9px;height:9px;border-radius:50%;background:${statusCol};border:1.5px solid #090b0f"></div></div>`;
 
-        el.addEventListener("click",(e)=>{
-          e.stopPropagation();
+        el.addEventListener("click",()=>{
           setSelected(u);setMsgs([]);setDrawerTab("Profile");
         });
 
