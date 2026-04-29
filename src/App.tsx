@@ -35,6 +35,50 @@ const GCSS = `
   @keyframes ping { 0%{transform:scale(1);opacity:1} 100%{transform:scale(2);opacity:0} }
   @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
 `
+// ─── PWA Install Banner ───────────────────────────────────────────────────────
+function InstallBanner() {
+  const [prompt, setPrompt] = useState<any>(null)
+  const [show, setShow] = useState(false)
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem('pwa_dismissed') === '1')
+
+  useEffect(() => {
+    const handler = (e: any) => { e.preventDefault(); setPrompt(e); setShow(true) }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  if (!show || dismissed) return null
+
+  const install = async () => {
+    if (!prompt) return
+    prompt.prompt()
+    const { outcome } = await prompt.userChoice
+    if (outcome === 'accepted') setShow(false)
+  }
+
+  const dismiss = () => { setDismissed(true); localStorage.setItem('pwa_dismissed', '1') }
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 76, left: 12, right: 12, zIndex: 300,
+      background: '#1d1f2b', border: '1px solid rgba(255,77,109,0.3)',
+      borderRadius: 14, padding: '14px 16px',
+      display: 'flex', alignItems: 'center', gap: 12,
+      boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+      animation: 'slideUp 0.3s ease',
+    }}>
+      <div style={{ fontSize: 28 }}>📍</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>Add to Home Screen</div>
+        <div style={{ fontSize: 12, color: '#9497aa', marginTop: 2 }}>Install for the full experience</div>
+      </div>
+      <button onClick={install} style={{ padding: '8px 16px', borderRadius: 8, background: '#ff4d6d', color: '#fff', fontWeight: 700, fontSize: 13 }}>Install</button>
+      <button onClick={dismiss} style={{ color: '#6b6d7d', fontSize: 18, lineHeight: 1 }}>✕</button>
+    </div>
+  )
+}
+
+
 
 // ─── Seed profiles (shown when no GPS / no nearby users) ─────────────────────
 const SEEDS: (Profile & { isSeed: true })[] = [
@@ -649,7 +693,7 @@ export default function App() {
       </main>
 
       {/* Bottom nav */}
-      <nav style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, height: TAB_H, background: C.surface, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 200 }}>
+      <nav style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, height: TAB_H, background: C.surface, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 200, paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {([
           { id: 'map', label: 'Map', icon: '📍' },
           { id: 'list', label: 'Nearby', icon: '👥' },
@@ -662,6 +706,8 @@ export default function App() {
           </button>
         ))}
       </nav>
+
+      <InstallBanner />
 
       {/* Profile drawer */}
       {selectedUser && (
