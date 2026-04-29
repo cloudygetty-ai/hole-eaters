@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase, signInAnon, upsertProfile, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport } from './lib/supabase'
-import type { Profile, Match, Message, ReportReason } from './lib/supabase'
+import { supabase, signInAnon, upsertProfile, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat } from './lib/supabase'
+import type { Profile, Match, Message, ReportReason, GlobalMessage } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
@@ -573,8 +573,151 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser }: { myPr
   )
 }
 
+
+// ─── Global Chat ──────────────────────────────────────────────────────────────
+function GlobalChat({ userId }: { userId: string | null }) {
+  const [messages, setMessages] = useState<GlobalMessage[]>([])
+  const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const [onlineCount, setOnlineCount] = useState(0)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    getGlobalMessages(60).then(({ data }) => {
+      if (data) setMessages(data as GlobalMessage[])
+    })
+    // Online count
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('online', true)
+      .then(({ count }) => setOnlineCount(count ?? 0))
+
+    const sub = subscribeToGlobalChat((msg) => {
+      setMessages(prev => {
+        if (prev.some(m => m.id === msg.id)) return prev
+        return [...prev, msg]
+      })
+    })
+    return () => { supabase.removeChannel(sub) }
+  }, [])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const send = async () => {
+    const text = input.trim()
+    if (!text || !userId || sending) return
+    setSending(true)
+    setInput('')
+    const { data, error } = await sendGlobalMessage(userId, text)
+    if (error) { console.error(error); setInput(text) }
+    else if (data) setMessages(prev => prev.some(m => m.id === (data as any).id) ? prev : [...prev, data as GlobalMessage])
+    setSending(false)
+    inputRef.current?.focus()
+  }
+
+  const fmt = (ts: string) => {
+    const d = new Date(ts)
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.bg }}>
+      {/* Header */}
+      <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 14 }}>Global Chat</div>
+          <div style={{ fontSize: 11, color: C.green, marginTop: 1 }}>● {onlineCount} online</div>
+        </div>
+        <div style={{ fontSize: 10, color: C.dim, fontFamily: FONT, textAlign: 'right' }}>
+          Say what's on your mind.<br/>Keep it spicy, not nasty.
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {messages.length === 0 && (
+          <div style={{ textAlign: 'center', color: C.dim, fontSize: 13, paddingTop: 40 }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🔥</div>
+            No messages yet. Start it.
+          </div>
+        )}
+        {messages.map((msg, i) => {
+          const mine = msg.sender_id === userId
+          const sender = msg.sender
+          const prevMsg = messages[i - 1]
+          const showHeader = !prevMsg || prevMsg.sender_id !== msg.sender_id
+
+          return (
+            <div key={msg.id} style={{ display: 'flex', gap: 8, flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end' }}>
+              {/* Avatar — only show on first in group */}
+              <div style={{ width: 28, flexShrink: 0 }}>
+                {showHeader && !mine && (
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50%',
+                    background: `${sender?.color ?? C.accent}22`,
+                    border: `1.5px solid ${sender?.color ?? C.accent}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 14, overflow: 'hidden',
+                  }}>
+                    {sender?.photo_url
+                      ? <img src={sender.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                      : sender?.emoji ?? '👤'}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ maxWidth: '74%', display: 'flex', flexDirection: 'column', gap: 2, alignItems: mine ? 'flex-end' : 'flex-start' }}>
+                {showHeader && !mine && (
+                  <div style={{ fontSize: 11, color: sender?.color ?? C.muted, fontWeight: 700, marginLeft: 2 }}>
+                    {sender?.name ?? 'Anonymous'}
+                  </div>
+                )}
+                <div style={{
+                  background: mine ? C.accent : C.surf2,
+                  borderRadius: mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                  padding: '9px 13px',
+                  fontSize: 14, lineHeight: 1.4, color: C.text,
+                }}>
+                  {msg.content}
+                </div>
+                <div style={{ fontSize: 10, color: C.dim, marginLeft: 2, marginRight: 2 }}>{fmt(msg.created_at)}</div>
+              </div>
+            </div>
+          )
+        })}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      {userId ? (
+        <div style={{ display: 'flex', gap: 8, padding: '10px 12px', background: C.surface, borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+          <input
+            ref={inputRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
+            placeholder="Say something..."
+            maxLength={500}
+            style={{ flex: 1, background: C.surf2, border: `1px solid ${C.border2}`, borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 14, outline: 'none' }}
+          />
+          <button onClick={send} disabled={!input.trim() || sending} style={{
+            width: 40, height: 40, borderRadius: 10, background: input.trim() ? C.accent : C.surf3,
+            color: '#fff', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0, opacity: sending ? 0.6 : 1, transition: 'all 0.15s',
+          }}>↑</button>
+        </div>
+      ) : (
+        <div style={{ padding: '14px 16px', background: C.surface, borderTop: `1px solid ${C.border}`, textAlign: 'center', color: C.dim, fontSize: 13 }}>
+          Complete onboarding to chat
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Root ─────────────────────────────────────────────────────────────────────
-type Screen = 'map' | 'list' | 'matches' | 'profile'
+type Screen = 'map' | 'list' | 'matches' | 'global' | 'profile'
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -728,6 +871,9 @@ export default function App() {
         {screen === 'matches' && user && (
           <MatchesScreen userId={user.id} onOpenChat={(match, other) => setActiveMatch({ match, other })} />
         )}
+        {screen === 'global' && (
+          <GlobalChat userId={user?.id ?? null} />
+        )}
         {screen === 'profile' && (
           <div style={{ padding: 20 }}>
             <div style={{ textAlign: 'center', marginBottom: 24 }}>
@@ -751,6 +897,7 @@ export default function App() {
         {([
           { id: 'map', label: 'Map', icon: '📍' },
           { id: 'list', label: 'Nearby', icon: '👥' },
+          { id: 'global', label: 'Chat', icon: '🔥' },
           { id: 'matches', label: 'Matches', icon: '❤️' },
           { id: 'profile', label: 'Me', icon: '👤' },
         ] as { id: Screen; label: string; icon: string }[]).map(tab => (

@@ -233,3 +233,47 @@ export async function getBans() {
 export async function checkIsAdmin() {
   return supabase.rpc('is_admin')
 }
+
+// ─── Global Chat ──────────────────────────────────────────────────────────────
+export interface GlobalMessage {
+  id: string
+  sender_id: string | null
+  content: string
+  media_url: string | null
+  media_type: 'image' | 'video' | null
+  created_at: string
+  sender?: Pick<Profile, 'id' | 'name' | 'emoji' | 'color' | 'photo_url'>
+}
+
+export async function getGlobalMessages(limit = 60) {
+  return supabase
+    .from('global_messages')
+    .select('*, sender:profiles!global_messages_sender_id_fkey(id,name,emoji,color,photo_url)')
+    .order('created_at', { ascending: true })
+    .limit(limit)
+}
+
+export async function sendGlobalMessage(senderId: string, content: string, mediaUrl?: string, mediaType?: 'image' | 'video') {
+  return supabase.from('global_messages').insert({
+    sender_id: senderId,
+    content,
+    media_url: mediaUrl || null,
+    media_type: mediaType || null,
+  }).select('*, sender:profiles!global_messages_sender_id_fkey(id,name,emoji,color,photo_url)').single()
+}
+
+export function subscribeToGlobalChat(cb: (msg: GlobalMessage) => void) {
+  return supabase.channel('global_chat')
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'global_messages'
+    }, async (payload) => {
+      // Fetch with sender join
+      const { data } = await supabase
+        .from('global_messages')
+        .select('*, sender:profiles!global_messages_sender_id_fkey(id,name,emoji,color,photo_url)')
+        .eq('id', payload.new.id)
+        .single()
+      if (data) cb(data as GlobalMessage)
+    })
+    .subscribe()
+}
