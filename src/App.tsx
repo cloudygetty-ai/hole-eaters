@@ -548,7 +548,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser }: { myPr
   })
 
   return (
-    <div data-map="1" style={{ flex: 1, position: 'relative', overflow: 'hidden', background: `radial-gradient(ellipse at center, #0d1a12 0%, ${C.bg} 100%)` }}>
+    <div data-map="1" style={{ flex: 1, height: '100%', position: 'relative', overflow: 'hidden', background: `radial-gradient(ellipse at center, #0d1a12 0%, ${C.bg} 100%)` }}>
       {/* Grid overlay */}
       <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.04, pointerEvents: 'none' }}>
         <defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#22c55e" strokeWidth="0.5" /></pattern></defs>
@@ -681,7 +681,7 @@ export default function App() {
   const TAB_H = 60
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 480, margin: '0 auto', height: '100vh', background: C.bg, fontFamily: SANS, position: 'relative' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 480, margin: '0 auto', height: '100vh', background: C.bg, fontFamily: SANS, position: 'relative', overflow: 'hidden' }}>
       <style>{GCSS}</style>
 
       {/* Header */}
@@ -703,7 +703,7 @@ export default function App() {
       </header>
 
       {/* Main content */}
-      <main style={{ flex: 1, overflow: screen === 'map' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', marginBottom: TAB_H }}>
+      <main style={{ height: `calc(100vh - 52px - ${TAB_H}px)`, overflow: screen === 'map' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column' }}>
         {screen === 'map' && (
           <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={nearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} />
         )}
