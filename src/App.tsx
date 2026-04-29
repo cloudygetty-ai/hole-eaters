@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase, upsertProfile, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport } from './lib/supabase'
+import { supabase, signInAnon, upsertProfile, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
@@ -542,23 +542,17 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Load profile — check local storage first, then Supabase
+  // Load profile — localStorage cache first for instant render, then sync from Supabase
   useEffect(() => {
-    // Load from localStorage immediately (works offline / pre-auth)
     const local = localStorage.getItem('he_local_profile')
-    if (local) {
-      try { setMyProfile(JSON.parse(local)) } catch {}
-    }
+    if (local) { try { setMyProfile(JSON.parse(local)) } catch {} }
   }, [])
 
   useEffect(() => {
     if (!user) return
     supabase.from('profiles').select('*').eq('id', user.id).maybeSingle().then(({ data, error }) => {
       if (error) console.error('Profile load error:', error)
-      if (data) {
-        setMyProfile(data)
-        localStorage.setItem('he_local_profile', JSON.stringify(data))
-      }
+      if (data) { setMyProfile(data); localStorage.setItem('he_local_profile', JSON.stringify(data)) }
     })
   }, [user])
 
@@ -575,9 +569,18 @@ export default function App() {
   }, [user])
 
   const handleOnboardingComplete = async (profileData: Partial<Profile>) => {
-    // Build full profile object
-    const localProfile = {
-      id: crypto.randomUUID(), // temp local ID until auth
+    let currentUser = user
+
+    if (!currentUser) {
+      const { data, error: authErr } = await signInAnon()
+      if (authErr || !data.user) { console.error('Auth failed:', authErr); return }
+      currentUser = data.user
+      setUser(currentUser)
+      await new Promise(res => setTimeout(res, 300))
+    }
+
+    const fullProfile = {
+      id: currentUser.id,
       name: profileData.name ?? 'Anonymous',
       age: profileData.age ?? 18,
       role: profileData.role ?? 'Curious',
@@ -590,18 +593,10 @@ export default function App() {
       last_seen: new Date().toISOString(),
     }
 
-    // Always set local state immediately — app works without auth
-    setMyProfile(localProfile)
-    localStorage.setItem('he_local_profile', JSON.stringify(localProfile))
-
-    // Try to persist to Supabase if user is authenticated
-    const currentUser = user
-    if (currentUser) {
-      const serverProfile = { ...localProfile, id: currentUser.id }
-      const { data, error } = await upsertProfile(serverProfile as Profile & { id: string })
-      if (!error && data) setMyProfile(data)
-    }
-    // If not authed — profile lives locally, syncs when they sign up later
+    const { data, error } = await upsertProfile(fullProfile as Profile & { id: string })
+    if (error) { console.error('Profile save failed:', error); setMyProfile(fullProfile); return }
+    setMyProfile(data ?? fullProfile)
+    localStorage.setItem('he_local_profile', JSON.stringify(data ?? fullProfile))
   }
 
   const handleLike = async (targetUser: Profile & { isSeed?: boolean }) => {
