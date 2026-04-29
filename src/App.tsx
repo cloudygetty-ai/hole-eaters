@@ -389,10 +389,58 @@ function MatchesScreen({ userId, onOpenChat }: { userId: string; onOpenChat: (ma
   )
 }
 
+
+// ─── Photo Upload Step ────────────────────────────────────────────────────────
+function PhotoUploadStep({ onPhoto, currentUrl, color, emoji }: { onPhoto: (url: string) => void; currentUrl: string | null; color: string; emoji: string }) {
+  const [uploading, setUploading] = useState(false)
+  const [err, setErr] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) { setErr('Max 10MB'); return }
+    setUploading(true); setErr('')
+    const path = `temp/${Date.now()}_${file.name.replace(/[^a-z0-9.]/gi, '_')}`
+    const { url, error } = await uploadMedia(file, path)
+    if (error || !url) { setErr('Upload failed — try again'); setUploading(false); return }
+    onPhoto(url)
+    setUploading(false)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+      <div
+        onClick={() => !uploading && fileRef.current?.click()}
+        style={{
+          width: 120, height: 120, borderRadius: '50%',
+          background: `linear-gradient(135deg, ${color}33, ${color}11)`,
+          border: `3px dashed ${currentUrl ? color : C.border2}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', overflow: 'hidden', transition: 'border-color 0.2s',
+        }}>
+        {uploading
+          ? <div style={{ fontSize: 30 }}>⏳</div>
+          : currentUrl
+            ? <img src={currentUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+            : <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 36 }}>{emoji}</div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>Tap to add</div>
+              </div>
+        }
+      </div>
+      <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={handleFile} />
+      {err && <div style={{ color: '#ef4444', fontSize: 13 }}>{err}</div>}
+      {currentUrl && <div style={{ color: C.green, fontSize: 13 }}>✓ Photo added</div>}
+      <div style={{ color: C.dim, fontSize: 13 }}>Optional — you can add one later</div>
+    </div>
+  )
+}
+
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => void }) {
   const [step, setStep] = useState(0)
-  const [form, setForm] = useState({ name: '', age: '', role: 'Versatile', bio: '', emoji: '🔥', color: C.accent, tags: [] as string[] })
+  const [form, setForm] = useState({ name: '', age: '', role: 'Versatile', bio: '', emoji: '🔥', color: C.accent, tags: [] as string[], photo_url: null as string | null })
   const [newTag, setNewTag] = useState('')
 
   const inputStyle: React.CSSProperties = { background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 12, padding: '13px 16px', color: C.text, fontSize: 15, width: '100%', outline: 'none' }
@@ -438,6 +486,13 @@ function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => void 
             ))}
           </div>
         </div>
+      ),
+      valid: () => true,
+    },
+    {
+      title: "Add a photo",
+      content: (
+        <PhotoUploadStep onPhoto={(url) => setForm(f => ({ ...f, photo_url: url }))} currentUrl={form.photo_url} color={form.color} emoji={form.emoji} />
       ),
       valid: () => true,
     },
