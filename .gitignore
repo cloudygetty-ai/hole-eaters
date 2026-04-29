@@ -1,0 +1,7 @@
+node_modules/
+dist/
+bundle.html
+.DS_Store
+*.local
+.env
+.env.*
