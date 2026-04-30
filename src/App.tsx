@@ -626,7 +626,7 @@ function GlobalChat({ userId }: { userId: string | null }) {
       {/* Header */}
       <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 14 }}>Global Chat</div>
+          <div style={{ fontWeight: 800, fontSize: 14 }}>Whore-izon</div>
           <div style={{ fontSize: 11, color: C.green, marginTop: 1 }}>● {onlineCount} online</div>
         </div>
         <div style={{ fontSize: 10, color: C.dim, fontFamily: FONT, textAlign: 'right' }}>
@@ -897,7 +897,7 @@ export default function App() {
         {([
           { id: 'map', label: 'Map', icon: '📍' },
           { id: 'list', label: 'Nearby', icon: '👥' },
-          { id: 'global', label: 'Chat', icon: '🔥' },
+          { id: 'global', label: 'Whore-izon', icon: '🔥' },
           { id: 'matches', label: 'Matches', icon: '❤️' },
           { id: 'profile', label: 'Me', icon: '👤' },
         ] as { id: Screen; label: string; icon: string }[]).map(tab => (
