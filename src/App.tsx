@@ -1639,15 +1639,43 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
+  // ── Profile load: localStorage → Supabase, with session-loss recovery ──
   useEffect(() => {
-    const local = localStorage.getItem('he_local_profile')
-    if (local) { try { setMyProfile(JSON.parse(local)) } catch {} }
+    // Show cached profile immediately (no flash)
+    const cached = localStorage.getItem('he_local_profile')
+    if (cached) {
+      try { setMyProfile(JSON.parse(cached)) } catch {}
+    }
   }, [])
 
   useEffect(() => {
     if (!user) return
-    supabase.from('profiles').select('*').eq('id', user.id).maybeSingle().then(({ data }) => {
-      if (data) { setMyProfile(data); localStorage.setItem('he_local_profile', JSON.stringify(data)) }
+
+    // Fetch from Supabase — source of truth
+    supabase.from('profiles').select('*').eq('id', user.id).maybeSingle().then(({ data, error }) => {
+      if (data) {
+        // Fresh data from DB — update both state and cache
+        setMyProfile(data)
+        localStorage.setItem('he_local_profile', JSON.stringify(data))
+        localStorage.setItem('he_profile_user_id', user.id)
+      } else if (!error) {
+        // No profile for this user ID — check if we have a cached profile to restore
+        const cached = localStorage.getItem('he_local_profile')
+        const cachedUserId = localStorage.getItem('he_profile_user_id')
+        if (cached && cachedUserId && cachedUserId !== user.id) {
+          // Session was lost (new anon ID) — re-upsert cached profile under new ID
+          try {
+            const profile = JSON.parse(cached)
+            const restored = { ...profile, id: user.id }
+            upsertProfile(restored).then(({ data: saved }) => {
+              const final = saved ?? restored
+              setMyProfile(final)
+              localStorage.setItem('he_local_profile', JSON.stringify(final))
+              localStorage.setItem('he_profile_user_id', user.id)
+            })
+          } catch {}
+        }
+      }
     })
   }, [user])
 
@@ -1727,8 +1755,10 @@ export default function App() {
     const fullProfile = { id: currentUser.id, name: profileData.name ?? 'Anonymous', age: profileData.age ?? 18, role: profileData.role ?? 'Curious', bio: profileData.bio ?? '', emoji: profileData.emoji ?? '🔥', color: profileData.color ?? C.accent, tags: profileData.tags ?? [], is_anon: false, online: true, last_seen: new Date().toISOString() }
     const { data, error } = await upsertProfile(fullProfile as Profile & { id: string })
     if (error) { setMyProfile(fullProfile); return }
-    setMyProfile(data ?? fullProfile)
-    localStorage.setItem('he_local_profile', JSON.stringify(data ?? fullProfile))
+    const finalProfile = data ?? fullProfile
+    setMyProfile(finalProfile)
+    localStorage.setItem('he_local_profile', JSON.stringify(finalProfile))
+    localStorage.setItem('he_profile_user_id', currentUser.id)
   }
 
   const handleMovePin = useCallback((pos: { x: number; y: number }) => { setMyPos(pos) }, [])
@@ -1741,6 +1771,7 @@ export default function App() {
       const saved = data ?? merged
       setMyProfile(saved)
       localStorage.setItem('he_local_profile', JSON.stringify(saved))
+      localStorage.setItem('he_profile_user_id', user.id)
     }
   }
 
