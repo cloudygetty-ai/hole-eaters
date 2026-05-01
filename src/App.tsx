@@ -41,7 +41,10 @@ const GCSS = `
   @keyframes roomGlow { 0%,100%{box-shadow:0 0 0 0 rgba(255,77,109,0.5)} 50%{box-shadow:0 0 0 10px rgba(255,77,109,0)} }
   @keyframes countdownShrink { from{width:100%} to{width:0%} }
   @keyframes slideDown { from{transform:translateY(-20px);opacity:0} to{transform:translateY(0);opacity:1} }
-`
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  .skip-link { position:absolute; top:-40px; left:0; background:${C.accent}; color:#fff; padding:8px 16px; z-index:9999; font-weight:700; border-radius:0 0 8px 0; transition:top 0.2s; }
+  .skip-link:focus { top:0; }
+\``
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface PulseMsg { id: string; senderId: string; senderName: string; senderEmoji: string; senderColor: string; content: string; ts: number }
@@ -523,10 +526,11 @@ function SeedChat({ seed, onBack }: { seed: SeedWithAI; onBack: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: C.bg }}>
       <style>{GCSS}</style>
+      <a href="#main-content" className="skip-link">Skip to content</a>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-        <button onClick={onBack} style={{ color: C.muted, fontSize: 20, lineHeight: 1, padding: '4px 8px 4px 0' }}>←</button>
+        <button aria-label="Go back" onClick={onBack} style={{ color: C.muted, fontSize: 20, lineHeight: 1, padding: '4px 8px 4px 0' }}>←</button>
         <Avatar user={seed} size={36} />
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>{seed.name}</div>
@@ -568,7 +572,7 @@ function SeedChat({ seed, onBack }: { seed: SeedWithAI; onBack: () => void }) {
           )
         })}
 
-        {thinking && (
+        {thinking && (<><span className="sr-only" aria-live="polite">{seed.name} is typing</span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <div style={{ width: 30, height: 30, borderRadius: '50%', background: `${seed.color}22`, border: `1.5px solid ${seed.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0 }}>{seed.emoji}</div>
             <div style={{ background: C.surf2, border: `1px solid ${seed.color}22`, borderRadius: '4px 16px 16px 16px', padding: '12px 16px', display: 'flex', gap: 5, alignItems: 'center' }}>
@@ -577,7 +581,7 @@ function SeedChat({ seed, onBack }: { seed: SeedWithAI; onBack: () => void }) {
               ))}
             </div>
           </div>
-        )}
+        </>)}
         <div ref={bottomRef} />
       </div>
 
@@ -624,7 +628,7 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage }: { user: SeedW
       <div style={{ position: 'relative', background: C.surf2, borderRadius: '20px 20px 0 0', padding: '0 0 32px', animation: 'slideUp 0.25s ease', maxHeight: '85vh', overflow: 'auto' }}>
         <div style={{ height: 180, background: `linear-gradient(135deg, ${user.color}33, ${user.color}11)`, position: 'relative', borderRadius: '20px 20px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Avatar user={user} size={80} />
-          <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,0.4)', color: C.text, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          <button aria-label="Close profile" onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,0.4)', color: C.text, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
           {user.cruising_status && <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', background: C.amber, color: '#000', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{user.cruising_status}</div>}
         </div>
         <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, padding: '0 20px' }}>
@@ -764,7 +768,7 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
         <input type="file" accept="image/*,video/*" ref={fileRef} style={{ display: 'none' }} onChange={e => e.target.files?.[0] && setPreviewFile(e.target.files[0])} />
         <button onClick={() => fileRef.current?.click()} style={{ width: 40, height: 40, borderRadius: 10, background: C.surf2, color: C.muted, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>📎</button>
         <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()} placeholder="Say something..." style={{ flex: 1, background: C.surf2, border: `1px solid ${C.border2}`, borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 14, outline: 'none' }} />
-        <button onClick={send} disabled={uploading} style={{ width: 40, height: 40, borderRadius: 10, background: C.accent, color: '#fff', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: uploading ? 0.5 : 1 }}>{uploading ? '⏳' : '↑'}</button>
+        <button onClick={send} disabled={uploading} style={{ width: 40, height: 40, borderRadius: 10, background: C.accent, color: '#fff', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: uploading ? 0.5 : 1 }}><span aria-hidden="true">{uploading ? '⏳' : '↑'}</span></button>
       </div>
     </div>
   )
@@ -977,7 +981,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   const onlineCount = nearby.filter(u => u.online).length
 
   return (
-    <div data-map="1" style={{ flex: 1, height: '100%', position: 'relative', overflow: 'hidden', background: `radial-gradient(ellipse at center, #0d1a12 0%, ${C.bg} 100%)` }}>
+    <div data-map="1" role="region" aria-label="Cruising map" style={{ flex: 1, height: '100%', position: 'relative', overflow: 'hidden', background: `radial-gradient(ellipse at center, #0d1a12 0%, ${C.bg} 100%)` }}>
       {/* Grid */}
       <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.04, pointerEvents: 'none' }}>
         <defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#22c55e" strokeWidth="0.5" /></pattern></defs>
@@ -1348,7 +1352,7 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 14px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
           <div style={{ fontWeight: 800, fontSize: 16 }}>Edit Profile</div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={onClose} style={{ color: C.dim, fontSize: 18, padding: '0 4px' }}>✕</button>
+            <button aria-label="Close editor" onClick={onClose} style={{ color: C.dim, fontSize: 18, padding: '0 4px' }}>✕</button>
           </div>
         </div>
 
@@ -1649,13 +1653,14 @@ export default function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 480, margin: '0 auto', height: '100vh', background: C.bg, fontFamily: SANS, position: 'relative', overflow: 'hidden', paddingBottom: TAB_H }}>
       <style>{GCSS}</style>
+      <a href="#main-content" className="skip-link">Skip to content</a>
 
       {/* Header */}
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0, zIndex: 200 }}>
+      <header role="banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0, zIndex: 200 }}>
         <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: 1 }}>THE HOLE EATERS</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Ghost Mode Toggle */}
-          <button onClick={() => setIsGhost(g => !g)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 20, background: isGhost ? 'rgba(100,255,218,0.1)' : C.surf2, border: `1px solid ${isGhost ? C.ghost + '55' : C.border2}`, fontSize: 11, fontWeight: 700, color: isGhost ? C.ghost : C.dim, transition: 'all 0.2s' }}>
+          <button aria-label={isGhost ? "Disable Ghost Mode" : "Enable Ghost Mode"} aria-pressed={isGhost} onClick={() => setIsGhost(g => !g)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 20, background: isGhost ? 'rgba(100,255,218,0.1)' : C.surf2, border: `1px solid ${isGhost ? C.ghost + '55' : C.border2}`, fontSize: 11, fontWeight: 700, color: isGhost ? C.ghost : C.dim, transition: 'all 0.2s' }}>
             <span>👻</span>
             <span>{isGhost ? 'Ghost' : 'Go Ghost'}</span>
           </button>
@@ -1676,7 +1681,7 @@ export default function App() {
       {isGhost && <GhostBanner onDisable={() => setIsGhost(false)} />}
 
       {/* Main */}
-      <main style={{ flex: 1, overflow: screen === 'map' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {screen === 'map' && (
           <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={nearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} />
         )}
@@ -1792,7 +1797,7 @@ export default function App() {
       </main>
 
       {/* Bottom nav */}
-      <nav style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, height: TAB_H, background: C.surface, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 200, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <nav aria-label="Main navigation" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, height: TAB_H, background: C.surface, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 200, paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {([
           { id: 'map', label: 'Map', icon: '📍' },
           { id: 'list', label: 'Nearby', icon: '👥' },
@@ -1800,8 +1805,8 @@ export default function App() {
           { id: 'matches', label: 'Matches', icon: '❤️' },
           { id: 'profile', label: 'Me', icon: '👤' },
         ] as { id: Screen; label: string; icon: string }[]).map(tab => (
-          <button key={tab.id} onClick={() => setScreen(tab.id)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, color: screen === tab.id ? (isGhost && tab.id === 'global' ? C.ghost : C.accent) : C.dim, background: 'none', transition: 'color 0.15s' }}>
-            <span style={{ fontSize: screen === tab.id ? 21 : 20 }}>{tab.icon}</span>
+          <button key={tab.id} aria-label={tab.label} aria-current={screen === tab.id ? "page" : undefined} onClick={() => setScreen(tab.id)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, color: screen === tab.id ? (isGhost && tab.id === 'global' ? C.ghost : C.accent) : C.dim, background: 'none', transition: 'color 0.15s' }}>
+            <span aria-hidden="true" style={{ fontSize: screen === tab.id ? 21 : 20 }}>{tab.icon}</span>
             <span style={{ fontSize: 9, fontWeight: screen === tab.id ? 700 : 400 }}>{tab.label}</span>
           </button>
         ))}
