@@ -689,7 +689,7 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage }: { user: SeedW
           )}
           {user.isSeed && (
             <button onClick={onMessage} style={{ flex: 1, padding: '13px', borderRadius: 12, background: `${user.color}18`, border: `1px solid ${user.color}44`, color: user.color, fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-              <span>💬</span><span>Chat</span><span style={{ fontSize: 10, opacity: 0.7, fontFamily: FONT }}>AI</span>
+              <span>💬</span><span>Chat</span>
             </button>
           )}
         </div>
@@ -972,7 +972,16 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   isGhost: boolean; onOpenPulseRoom: (id: string) => void;
   pulseRooms: PulseRoom[]; onCreatePulseRoom: () => void;
 }) {
-  const positions = nearby.map(u => {
+  // Stable positions: seeds use evenly spread grid, real users use ID hash
+  const positions = nearby.map((u, idx) => {
+    if ((u as any).isSeed) {
+      // Evenly distribute seeds around the map in a loose grid
+      const seedSlots = [
+        { x: 20, y: 25 }, { x: 72, y: 20 }, { x: 18, y: 68 }, { x: 75, y: 65 },
+        { x: 45, y: 15 }, { x: 82, y: 45 }, { x: 12, y: 45 }, { x: 50, y: 75 },
+      ]
+      return seedSlots[idx % seedSlots.length]
+    }
     let hash = 0
     for (let i = 0; i < u.id.length; i++) hash = (hash * 31 + u.id.charCodeAt(i)) & 0xffff
     return { x: 10 + (hash % 80), y: 10 + ((hash >> 4) % 75) }
@@ -1651,7 +1660,7 @@ export default function App() {
   const TAB_H = 60
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 480, margin: '0 auto', height: '100vh', background: C.bg, fontFamily: SANS, position: 'relative', overflow: 'hidden', paddingBottom: TAB_H }}>
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 480, margin: '0 auto', height: '100vh', background: C.bg, fontFamily: SANS, position: 'relative', overflow: 'hidden' }}>
       <style>{GCSS}</style>
       <a href="#main-content" className="skip-link">Skip to content</a>
 
