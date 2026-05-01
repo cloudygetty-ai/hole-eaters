@@ -550,12 +550,43 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   )
 }
 
+// ─── Whore-izon Theme Tokens ──────────────────────────────────────────────────
+const WH = {
+  bg: '#0a0305',
+  surface: '#110508',
+  surf2: '#190a0e',
+  surf3: '#221014',
+  neon: '#ff1654',
+  neonDim: '#ff165433',
+  neonGlow: '#ff165466',
+  pink: '#ff6b9d',
+  lipstick: '#c0124a',
+  marquee: '#ffe066',
+  border: 'rgba(255,22,84,0.12)',
+  border2: 'rgba(255,22,84,0.22)',
+  text: '#ffd6e0',
+  dim: '#7a3a4a',
+  muted: '#b06070',
+}
+
+const WH_CSS = `
+  @keyframes neonFlicker {
+    0%,19%,21%,23%,25%,54%,56%,100% { text-shadow: 0 0 4px #ff1654, 0 0 10px #ff1654, 0 0 20px #ff1654; }
+    20%,24%,55% { text-shadow: none; }
+  }
+  @keyframes marqueeScroll { 0% { transform: translateX(100%) } 100% { transform: translateX(-100%) } }
+  @keyframes scanline { 0% { top: -10% } 100% { top: 110% } }
+  @keyframes ripple { 0% { transform: scale(1); opacity: 0.6 } 100% { transform: scale(2.5); opacity: 0 } }
+  @keyframes breathe { 0%,100%{opacity:0.7} 50%{opacity:1} }
+`
+
 // ─── Whore-izon Global Chat ───────────────────────────────────────────────────
 function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boolean }) {
   const [messages, setMessages] = useState<GlobalMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [onlineCount, setOnlineCount] = useState(0)
+  const [inputFocused, setInputFocused] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -573,45 +604,81 @@ function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boole
     if (!text || !userId || sending) return
     setSending(true); setInput('')
 
-    // Ghost sends as anonymous
     if (isGhost) {
       const ghostMsg: GlobalMessage = {
-        id: `ghost_${Date.now()}`,
-        sender_id: userId,
-        content: text,
-        created_at: new Date().toISOString(),
-        media_url: null,
-        media_type: null,
+        id: `ghost_${Date.now()}`, sender_id: userId, content: text,
+        created_at: new Date().toISOString(), media_url: null, media_type: null,
         sender: { name: '👻 Ghost', emoji: '👻', color: C.ghost, photo_url: null } as any,
       }
       setMessages(prev => [...prev, ghostMsg])
-      // Still persist but anonymized
       await sendGlobalMessage(userId, `👻 ${text}`)
-      setSending(false)
-      inputRef.current?.focus()
+      setSending(false); inputRef.current?.focus()
       return
     }
 
     const { data, error } = await sendGlobalMessage(userId, text)
     if (error) { setInput(text) } else if (data) setMessages(prev => prev.some(m => m.id === (data as any).id) ? prev : [...prev, data as GlobalMessage])
-    setSending(false)
-    inputRef.current?.focus()
+    setSending(false); inputRef.current?.focus()
   }
 
   const fmt = (ts: string) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.bg }}>
-      <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <div>
-          <div style={{ fontWeight: 800, fontSize: 14 }}>Whore-izon</div>
-          <div style={{ fontSize: 11, color: C.green, marginTop: 1 }}>● {onlineCount} online {isGhost && <span style={{ color: C.ghost }}> · you're a ghost</span>}</div>
-        </div>
-        {isGhost && <div style={{ fontSize: 20 }}>👻</div>}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: WH.bg, position: 'relative', overflow: 'hidden' }}>
+      <style>{WH_CSS}</style>
+
+      {/* Scanline effect */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1, overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, height: '2px', background: 'linear-gradient(transparent, rgba(255,22,84,0.06), transparent)', animation: 'scanline 6s linear infinite' }} />
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {messages.length === 0 && <div style={{ textAlign: 'center', color: C.dim, fontSize: 13, paddingTop: 40 }}><div style={{ fontSize: 32, marginBottom: 8 }}>🔥</div>No messages yet. Start it.</div>}
+      {/* Subtle noise texture */}
+      <div style={{ position: 'absolute', inset: 0, opacity: 0.03, pointerEvents: 'none', zIndex: 1, backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")' }} />
+
+      {/* Header */}
+      <div style={{ position: 'relative', zIndex: 2, flexShrink: 0, background: `linear-gradient(180deg, ${WH.surface} 0%, ${WH.bg} 100%)`, borderBottom: `1px solid ${WH.border2}`, padding: '0 0 0 0' }}>
+
+        {/* Marquee ticker */}
+        <div style={{ overflow: 'hidden', background: WH.neon, height: 22, display: 'flex', alignItems: 'center' }}>
+          <div style={{ whiteSpace: 'nowrap', fontSize: 10, fontWeight: 800, color: '#000', letterSpacing: 2, fontFamily: FONT, animation: 'marqueeScroll 18s linear infinite' }}>
+            ★ WHORE-IZON ★ THE OPEN HORIZON ★ SAY WHAT YOU WANT ★ KEEP IT HOT ★ WHORE-IZON ★ NO LIMITS ★ THE OPEN HORIZON ★ SAY WHAT YOU WANT ★
+          </div>
+        </div>
+
+        {/* Title row */}
+        <div style={{ padding: '10px 16px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 900, fontSize: 22, letterSpacing: -0.5, color: WH.neon, animation: 'neonFlicker 5s infinite', lineHeight: 1 }}>
+              WHORE-IZON
+            </div>
+            <div style={{ fontSize: 10, color: WH.muted, marginTop: 3, letterSpacing: 1, fontFamily: FONT }}>
+              THE OPEN HORIZON · {onlineCount} LIVE {isGhost && <span style={{ color: C.ghost }}>· 👻 GHOST</span>}
+            </div>
+          </div>
+
+          {/* Live pulse orb */}
+          <div style={{ position: 'relative', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ position: 'absolute', width: 36, height: 36, borderRadius: '50%', border: `1px solid ${WH.neon}`, animation: 'ripple 2s ease-out infinite' }} />
+            <div style={{ position: 'absolute', width: 36, height: 36, borderRadius: '50%', border: `1px solid ${WH.neon}`, animation: 'ripple 2s ease-out infinite 0.7s' }} />
+            <div style={{ width: 16, height: 16, borderRadius: '50%', background: WH.neon, boxShadow: `0 0 8px ${WH.neon}, 0 0 20px ${WH.neonGlow}`, animation: 'breathe 2s ease-in-out infinite' }} />
+          </div>
+        </div>
+
+        {/* Neon divider */}
+        <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${WH.neon}, ${WH.pink}, ${WH.neon}, transparent)`, opacity: 0.5 }} />
+      </div>
+
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px', display: 'flex', flexDirection: 'column', gap: 12, position: 'relative', zIndex: 2 }}>
+        {messages.length === 0 && (
+          <div style={{ textAlign: 'center', paddingTop: 60 }}>
+            <div style={{ fontSize: 48, marginBottom: 12, filter: `drop-shadow(0 0 12px ${WH.neon})` }}>💋</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: WH.neon, letterSpacing: 1 }}>THE HORIZON IS OPEN</div>
+            <div style={{ fontSize: 12, color: WH.muted, marginTop: 6, fontFamily: FONT }}>No one's said a word yet.</div>
+            <div style={{ fontSize: 12, color: WH.dim, marginTop: 3, fontFamily: FONT }}>Be the slut that breaks the silence.</div>
+          </div>
+        )}
+
         {messages.map((msg, i) => {
           const mine = msg.sender_id === userId
           const sender = msg.sender
@@ -620,21 +687,65 @@ function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boole
           const isGhostMsg = msg.content.startsWith('👻 ')
           const displayContent = isGhostMsg ? msg.content.slice(2) : msg.content
 
+          // Mine: right-aligned hot pink bubble
+          if (mine) return (
+            <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+              <div style={{
+                maxWidth: '76%',
+                background: `linear-gradient(135deg, ${WH.neon}, ${WH.lipstick})`,
+                borderRadius: '18px 18px 4px 18px',
+                padding: '10px 15px',
+                fontSize: 14, lineHeight: 1.45, color: '#fff',
+                boxShadow: `0 2px 12px ${WH.neonDim}`,
+              }}>{displayContent}</div>
+              <div style={{ fontSize: 10, color: WH.dim, fontFamily: FONT, marginRight: 4 }}>{fmt(msg.created_at)}</div>
+            </div>
+          )
+
+          // Ghost message
+          if (isGhostMsg) return (
+            <div key={msg.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+              <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(100,255,218,0.05)', border: `1px dashed ${C.ghost}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👻</div>
+              <div style={{ maxWidth: '72%' }}>
+                {showHeader && <div style={{ fontSize: 10, color: C.ghost, fontWeight: 700, marginBottom: 3, fontFamily: FONT, letterSpacing: 0.5 }}>👻 GHOST</div>}
+                <div style={{ background: 'rgba(100,255,218,0.06)', border: `1px solid ${C.ghost}22`, borderRadius: '4px 18px 18px 18px', padding: '10px 14px', fontSize: 14, lineHeight: 1.45, color: C.ghost }}>
+                  {displayContent}
+                </div>
+                <div style={{ fontSize: 10, color: WH.dim, marginTop: 3, fontFamily: FONT }}>{fmt(msg.created_at)}</div>
+              </div>
+            </div>
+          )
+
+          // Other user
+          const sColor = sender?.color ?? WH.neon
           return (
-            <div key={msg.id} style={{ display: 'flex', gap: 8, flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end' }}>
-              <div style={{ width: 28, flexShrink: 0 }}>
-                {showHeader && !mine && (
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: isGhostMsg ? 'rgba(100,255,218,0.06)' : `${sender?.color ?? C.accent}22`, border: `1.5px solid ${isGhostMsg ? C.ghost + '44' : sender?.color ?? C.accent}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, overflow: 'hidden' }}>
-                    {isGhostMsg ? '👻' : (sender?.photo_url ? <img src={sender.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : sender?.emoji ?? '👤')}
+            <div key={msg.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+              {/* Avatar */}
+              <div style={{ width: 30, flexShrink: 0 }}>
+                {showHeader && (
+                  <div style={{ width: 30, height: 30, borderRadius: '50%', background: `${sColor}18`, border: `1.5px solid ${sColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, overflow: 'hidden', boxShadow: `0 0 8px ${sColor}44` }}>
+                    {sender?.photo_url ? <img src={sender.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : sender?.emoji ?? '👤'}
                   </div>
                 )}
               </div>
-              <div style={{ maxWidth: '74%', display: 'flex', flexDirection: 'column', gap: 2, alignItems: mine ? 'flex-end' : 'flex-start' }}>
-                {showHeader && !mine && <div style={{ fontSize: 11, color: isGhostMsg ? C.ghost : (sender?.color ?? C.muted), fontWeight: 700, marginLeft: 2 }}>{isGhostMsg ? '👻 Ghost' : (sender?.name ?? 'Anonymous')}</div>}
-                <div style={{ background: mine ? C.accent : isGhostMsg ? 'rgba(100,255,218,0.08)' : C.surf2, borderRadius: mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding: '9px 13px', fontSize: 14, lineHeight: 1.4, border: isGhostMsg ? `1px solid ${C.ghost}22` : 'none', color: isGhostMsg ? C.ghost : C.text }}>
+
+              {/* Bubble */}
+              <div style={{ maxWidth: '72%' }}>
+                {showHeader && (
+                  <div style={{ fontSize: 10, color: sColor, fontWeight: 800, marginBottom: 3, fontFamily: FONT, letterSpacing: 0.5, textShadow: `0 0 6px ${sColor}66` }}>
+                    {sender?.name?.toUpperCase() ?? 'ANONYMOUS'}
+                  </div>
+                )}
+                <div style={{
+                  background: WH.surf2,
+                  border: `1px solid ${WH.border}`,
+                  borderRadius: '4px 18px 18px 18px',
+                  padding: '10px 14px',
+                  fontSize: 14, lineHeight: 1.45, color: WH.text,
+                }}>
                   {displayContent}
                 </div>
-                <div style={{ fontSize: 10, color: C.dim, marginLeft: 2, marginRight: 2 }}>{fmt(msg.created_at)}</div>
+                <div style={{ fontSize: 10, color: WH.dim, marginTop: 3, fontFamily: FONT }}>{fmt(msg.created_at)}</div>
               </div>
             </div>
           )
@@ -642,15 +753,63 @@ function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boole
         <div ref={bottomRef} />
       </div>
 
-      {userId ? (
-        <div style={{ display: 'flex', gap: 8, padding: '10px 12px', background: C.surface, borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-          {isGhost && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, fontSize: 18, flexShrink: 0, borderRadius: 10, background: 'rgba(100,255,218,0.06)', border: `1px solid ${C.ghost}33` }}>👻</div>}
-          <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()} placeholder={isGhost ? "Message as Ghost..." : "Say something..."} maxLength={500} style={{ flex: 1, background: isGhost ? 'rgba(100,255,218,0.04)' : C.surf2, border: `1px solid ${isGhost ? C.ghost + '33' : C.border2}`, borderRadius: 10, padding: '10px 14px', color: isGhost ? C.ghost : C.text, fontSize: 14, outline: 'none' }} />
-          <button onClick={send} disabled={!input.trim() || sending} style={{ width: 40, height: 40, borderRadius: 10, background: input.trim() ? (isGhost ? C.ghost : C.accent) : C.surf3, color: isGhost ? C.bg : '#fff', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: sending ? 0.6 : 1, transition: 'all 0.15s' }}>↑</button>
-        </div>
-      ) : (
-        <div style={{ padding: '14px 16px', background: C.surface, borderTop: `1px solid ${C.border}`, textAlign: 'center', color: C.dim, fontSize: 13 }}>Complete onboarding to chat</div>
-      )}
+      {/* Input bar */}
+      <div style={{ position: 'relative', zIndex: 2, flexShrink: 0 }}>
+        {/* Glow line above input when focused */}
+        <div style={{ height: 1, background: inputFocused ? `linear-gradient(90deg, transparent, ${WH.neon}, ${WH.pink}, transparent)` : `linear-gradient(90deg, transparent, ${WH.border2}, transparent)`, transition: 'all 0.3s' }} />
+
+        {userId ? (
+          <div style={{ display: 'flex', gap: 8, padding: '10px 12px 12px', background: WH.surface, alignItems: 'center' }}>
+            {isGhost && (
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(100,255,218,0.06)', border: `1px solid ${C.ghost}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>👻</div>
+            )}
+            <div style={{ flex: 1, position: 'relative' }}>
+              <input
+                ref={inputRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
+                placeholder={isGhost ? "whisper as ghost..." : "say something filthy..."}
+                maxLength={500}
+                style={{
+                  width: '100%',
+                  background: isGhost ? 'rgba(100,255,218,0.04)' : WH.surf3,
+                  border: `1px solid ${inputFocused ? (isGhost ? C.ghost : WH.neon) : WH.border}`,
+                  borderRadius: 12,
+                  padding: '11px 14px',
+                  color: isGhost ? C.ghost : WH.text,
+                  fontSize: 14,
+                  outline: 'none',
+                  boxShadow: inputFocused ? `0 0 0 3px ${isGhost ? C.ghost + '18' : WH.neonDim}` : 'none',
+                  transition: 'all 0.2s',
+                  caretColor: isGhost ? C.ghost : WH.neon,
+                }}
+              />
+            </div>
+            <button
+              onClick={send}
+              disabled={!input.trim() || sending}
+              style={{
+                width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+                background: input.trim() ? (isGhost ? C.ghost : `linear-gradient(135deg, ${WH.neon}, ${WH.lipstick})`) : WH.surf3,
+                color: input.trim() ? (isGhost ? WH.bg : '#fff') : WH.dim,
+                fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                opacity: sending ? 0.5 : 1,
+                boxShadow: input.trim() && !isGhost ? `0 2px 12px ${WH.neonDim}` : 'none',
+                transition: 'all 0.15s',
+              }}
+            >
+              {sending ? <span style={{ fontSize: 12 }}>…</span> : '↑'}
+            </button>
+          </div>
+        ) : (
+          <div style={{ padding: '16px', background: WH.surface, textAlign: 'center' }}>
+            <div style={{ fontSize: 13, color: WH.muted }}>Complete onboarding to enter the horizon</div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
