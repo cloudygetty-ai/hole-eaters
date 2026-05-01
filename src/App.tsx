@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import { supabase, signInAnon, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, GlobalMessage } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
@@ -1866,6 +1867,9 @@ export default function App() {
 
       {/* PWA Install */}
       <InstallBanner />
+      
+      {/* Vercel Speed Insights */}
+      <SpeedInsights />
     </div>
   )
 }
