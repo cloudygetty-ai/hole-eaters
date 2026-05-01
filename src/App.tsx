@@ -975,10 +975,16 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   // Stable positions: seeds use evenly spread grid, real users use ID hash
   const positions = nearby.map((u, idx) => {
     if ((u as any).isSeed) {
-      // Evenly distribute seeds around the map in a loose grid
+      // Seeds spread across the full map — max distance from each other and from center pin
       const seedSlots = [
-        { x: 20, y: 25 }, { x: 72, y: 20 }, { x: 18, y: 68 }, { x: 75, y: 65 },
-        { x: 45, y: 15 }, { x: 82, y: 45 }, { x: 12, y: 45 }, { x: 50, y: 75 },
+        { x: 12, y: 12 },   // top-left
+        { x: 85, y: 10 },   // top-right
+        { x: 8,  y: 80 },   // bottom-left
+        { x: 88, y: 82 },   // bottom-right
+        { x: 50, y: 8  },   // top-center
+        { x: 90, y: 48 },   // mid-right
+        { x: 6,  y: 50 },   // mid-left
+        { x: 50, y: 90 },   // bottom-center
       ]
       return seedSlots[idx % seedSlots.length]
     }
