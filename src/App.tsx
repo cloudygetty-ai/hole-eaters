@@ -195,7 +195,11 @@ function Avatar({ user, size = 44, showStatus = true, ghost = false }: { user: P
         overflow: 'hidden', fontSize: size * 0.45,
         filter: ghost ? 'grayscale(0.8) brightness(0.5)' : 'none',
       }}>
-        {ghost ? '👻' : (user.photo_url ? <img src={user.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : user.emoji)}
+        {ghost ? '👻' : user.video_url
+          ? <video src={user.video_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay muted loop playsInline />
+          : user.photo_url
+          ? <img src={user.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+          : user.emoji}
       </div>
       {showStatus && user.online && !ghost && (
         <div style={{ position: 'absolute', bottom: 1, right: 1, width: size * 0.26, height: size * 0.26, background: C.green, borderRadius: '50%', border: `2px solid ${C.bg}` }} />
@@ -626,8 +630,13 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage }: { user: SeedW
     <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={onClose} />
       <div style={{ position: 'relative', background: C.surf2, borderRadius: '20px 20px 0 0', padding: '0 0 32px', animation: 'slideUp 0.25s ease', maxHeight: '85vh', overflow: 'auto' }}>
-        <div style={{ height: 180, background: `linear-gradient(135deg, ${user.color}33, ${user.color}11)`, position: 'relative', borderRadius: '20px 20px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Avatar user={user} size={80} />
+        <div style={{ height: 200, background: `linear-gradient(135deg, ${user.color}33, ${user.color}11)`, position: 'relative', borderRadius: '20px 20px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          {(user as any).video_url && (
+            <video src={(user as any).video_url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.7 }} autoPlay muted loop playsInline />
+          )}
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <Avatar user={user} size={80} />
+          </div>
           <button aria-label="Close profile" onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,0.4)', color: C.text, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
           {user.cruising_status && <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', background: C.amber, color: '#000', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{user.cruising_status}</div>}
         </div>
@@ -806,33 +815,91 @@ function MatchesScreen({ userId, onOpenChat }: { userId: string; onOpenChat: (ma
 }
 
 // ─── Photo Upload Step ────────────────────────────────────────────────────────
-function PhotoUploadStep({ onPhoto, currentUrl, color, emoji }: { onPhoto: (url: string) => void; currentUrl: string | null; color: string; emoji: string }) {
+// ─── Media Upload (Photo + Video) ────────────────────────────────────────────
+function MediaUploadStep({ photoUrl, videoUrl, color, emoji, onPhoto, onVideo }: {
+  photoUrl: string | null; videoUrl: string | null; color: string; emoji: string;
+  onPhoto: (url: string) => void; onVideo: (url: string) => void
+}) {
+  const [tab, setTab] = useState<'photo'|'video'>('photo')
   const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [err, setErr] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const isPhoto = tab === 'photo'
+  const currentUrl = isPhoto ? photoUrl : videoUrl
+  const maxMB = isPhoto ? 10 : 50
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 10 * 1024 * 1024) { setErr('Max 10MB'); return }
-    setUploading(true); setErr('')
-    const path = `temp/${Date.now()}_${file.name.replace(/[^a-z0-9.]/gi, '_')}`
+    if (file.size > maxMB * 1024 * 1024) { setErr(`Max ${maxMB}MB`); return }
+    setUploading(true); setErr(''); setProgress(0)
+
+    // Simulate progress (uploadMedia is single-shot, no real progress API)
+    const ticker = setInterval(() => setProgress(p => Math.min(p + 15, 85)), 200)
+
+    const path = `profiles/${Date.now()}_${file.name.replace(/[^a-z0-9.]/gi, '_')}`
     const { url, error } = await uploadMedia(file, path)
-    if (error || !url) { setErr('Upload failed'); setUploading(false); return }
-    onPhoto(url); setUploading(false)
+    clearInterval(ticker); setProgress(100)
+
+    if (error || !url) { setErr('Upload failed'); setUploading(false); setProgress(0); return }
+    if (isPhoto) onPhoto(url); else onVideo(url)
+    setUploading(false)
+    setTimeout(() => setProgress(0), 800)
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-      <div onClick={() => !uploading && fileRef.current?.click()} style={{ width: 120, height: 120, borderRadius: '50%', background: `linear-gradient(135deg, ${color}33, ${color}11)`, border: `3px dashed ${currentUrl ? color : C.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden' }}>
-        {uploading ? <div style={{ fontSize: 30 }}>⏳</div> : currentUrl ? <img src={currentUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : <div style={{ textAlign: 'center' }}><div style={{ fontSize: 36 }}>{emoji}</div><div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>Tap to add</div></div>}
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+      {/* Tab switch */}
+      <div style={{ display: 'flex', background: C.surf3, borderRadius: 12, padding: 3, gap: 2 }}>
+        {(['photo', 'video'] as const).map(t => (
+          <button key={t} onClick={() => { setTab(t); setErr('') }} style={{ padding: '7px 20px', borderRadius: 10, background: tab === t ? C.accent : 'transparent', color: tab === t ? '#fff' : C.dim, fontWeight: tab === t ? 700 : 400, fontSize: 13, transition: 'all 0.15s' }}>
+            {t === 'photo' ? '📷 Photo' : '🎬 Video'}
+          </button>
+        ))}
       </div>
-      <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={handleFile} />
-      {err && <div style={{ color: '#ef4444', fontSize: 13 }}>{err}</div>}
-      {currentUrl && <div style={{ color: C.green, fontSize: 13 }}>✓ Photo added</div>}
-      <div style={{ color: C.dim, fontSize: 13 }}>Optional — you can add one later</div>
+
+      {/* Preview area */}
+      <div onClick={() => !uploading && fileRef.current?.click()} style={{ width: 160, height: 160, borderRadius: isPhoto ? '50%' : 16, background: `linear-gradient(135deg, ${color}22, ${color}11)`, border: `3px dashed ${currentUrl ? color : C.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden', position: 'relative' }}>
+        {uploading ? (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>⏳</div>
+            <div style={{ width: 80, height: 4, background: C.surf3, borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ width: `${progress}%`, height: '100%', background: C.accent, transition: 'width 0.2s', borderRadius: 2 }} />
+            </div>
+          </div>
+        ) : currentUrl ? (
+          isPhoto
+            ? <img src={currentUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Profile photo" />
+            : <video src={currentUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay muted loop playsInline />
+        ) : (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 36, marginBottom: 4 }}>{isPhoto ? emoji : '🎬'}</div>
+            <div style={{ fontSize: 11, color: C.dim }}>Tap to {isPhoto ? 'add photo' : 'add video'}</div>
+            <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>max {maxMB}MB</div>
+          </div>
+        )}
+        {currentUrl && !uploading && (
+          <div style={{ position: 'absolute', bottom: 6, right: 6, background: C.green, borderRadius: '50%', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>✓</div>
+        )}
+      </div>
+
+      <input ref={fileRef} type="file"
+        accept={isPhoto ? 'image/jpeg,image/png,image/webp' : 'video/mp4,video/webm,video/mov,video/quicktime'}
+        style={{ display: 'none' }} onChange={handleFile} />
+
+      {err && <div style={{ color: '#ef4444', fontSize: 12 }}>{err}</div>}
+      {!currentUrl && <div style={{ color: C.dim, fontSize: 12 }}>Optional — skip and add later</div>}
+      {isPhoto && videoUrl && <div style={{ fontSize: 11, color: C.muted }}>🎬 Video also set</div>}
+      {!isPhoto && photoUrl && <div style={{ fontSize: 11, color: C.muted }}>📷 Photo also set</div>}
     </div>
   )
+}
+
+// Legacy alias used by onboarding
+function PhotoUploadStep({ onPhoto, currentUrl, color, emoji }: { onPhoto: (url: string) => void; currentUrl: string | null; color: string; emoji: string }) {
+  return <MediaUploadStep photoUrl={currentUrl} videoUrl={null} color={color} emoji={emoji} onPhoto={onPhoto} onVideo={() => {}} />
 }
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
@@ -1332,6 +1399,8 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
     emoji: profile.emoji ?? '🔥',
     color: profile.color ?? C.accent,
     tags: profile.tags ?? [] as string[],
+    photo_url: profile.photo_url ?? null as string | null,
+    video_url: profile.video_url ?? null as string | null,
   })
   const [newTag, setNewTag] = useState('')
   const [saving, setSaving] = useState(false)
@@ -1353,6 +1422,8 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
       emoji: form.emoji,
       color: form.color,
       tags: form.tags,
+      photo_url: form.photo_url,
+      video_url: form.video_url,
     })
     setSaving(false)
     setSaved(true)
@@ -1432,6 +1503,19 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
               onKeyDown={e => { if (e.key === 'Enter' && newTag.trim() && form.tags.length < 8) { setForm(f => ({ ...f, tags: [...f.tags, newTag.trim()] })); setNewTag('') } }}
               placeholder="Add tag (Enter)" maxLength={20}
               style={{ ...inputStyle, width: '100%' }} />
+          </div>
+
+          {/* Media */}
+          <div>
+            <div style={{ fontSize: 11, color: C.dim, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Photo / Video</div>
+            <MediaUploadStep
+              photoUrl={form.photo_url}
+              videoUrl={form.video_url}
+              color={form.color}
+              emoji={form.emoji}
+              onPhoto={url => setForm(f => ({ ...f, photo_url: url }))}
+              onVideo={url => setForm(f => ({ ...f, video_url: url }))}
+            />
           </div>
 
           {/* Save button */}
