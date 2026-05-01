@@ -797,15 +797,12 @@ function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoo
 // ─── FEATURE: GHOST MODE BANNER ───────────────────────────────────────────────
 function GhostBanner({ onDisable }: { onDisable: () => void }) {
   return (
-    <div style={{ position: 'fixed', top: 52, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, zIndex: 250, padding: '0 12px', animation: 'slideDown 0.3s ease' }}>
-      <div style={{ background: 'rgba(100,255,218,0.06)', border: `1px solid ${C.ghost}33`, borderRadius: 12, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, backdropFilter: 'blur(8px)' }}>
-        <span style={{ fontSize: 18 }}>👻</span>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.ghost }}>Ghost Mode Active</div>
-          <div style={{ fontSize: 11, color: C.dim }}>You're invisible on the map. Chatting as 👻 Ghost.</div>
-        </div>
-        <button onClick={onDisable} style={{ fontSize: 11, color: C.ghost, border: `1px solid ${C.ghost}44`, borderRadius: 8, padding: '5px 10px', fontWeight: 700 }}>Reveal</button>
+    <div style={{ background: 'rgba(100,255,218,0.06)', borderBottom: `1px solid ${C.ghost}22`, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, animation: 'slideDown 0.3s ease' }}>
+      <span style={{ fontSize: 16 }}>👻</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.ghost }}>Ghost Mode — invisible on map · chatting as 👻 Ghost</div>
       </div>
+      <button onClick={onDisable} style={{ fontSize: 11, color: C.ghost, border: `1px solid ${C.ghost}44`, borderRadius: 8, padding: '4px 9px', fontWeight: 700, flexShrink: 0 }}>Reveal</button>
     </div>
   )
 }
@@ -1302,7 +1299,7 @@ export default function App() {
   const TAB_H = 60
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 480, margin: '0 auto', height: '100vh', background: C.bg, fontFamily: SANS, position: 'relative', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 480, margin: '0 auto', height: '100vh', background: C.bg, fontFamily: SANS, position: 'relative', overflow: 'hidden', paddingBottom: TAB_H }}>
       <style>{GCSS}</style>
 
       {/* Header */}
@@ -1331,7 +1328,7 @@ export default function App() {
       {isGhost && <GhostBanner onDisable={() => setIsGhost(false)} />}
 
       {/* Main */}
-      <main style={{ height: `calc(100vh - 52px - ${TAB_H}px)`, overflow: screen === 'map' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', marginTop: isGhost ? 52 : 0, transition: 'margin-top 0.3s' }}>
+      <main style={{ flex: 1, overflow: screen === 'map' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {screen === 'map' && (
           <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={nearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} />
         )}
