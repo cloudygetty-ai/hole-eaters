@@ -619,12 +619,13 @@ function SeedChat({ seed, onBack }: { seed: SeedWithAI; onBack: () => void }) {
 }
 
 // ─── Profile Drawer ───────────────────────────────────────────────────────────
-function ProfileDrawer({ user, myId, onClose, onLike, onMessage }: { user: SeedWithAI | (Profile & { isSeed?: false }); myId: string; onClose: () => void; onLike: () => void; onMessage: () => void }) {
+function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onBlock }: { user: SeedWithAI | (Profile & { isSeed?: false }); myId: string; onClose: () => void; onLike: () => void; onMessage: () => void; onBlock: (id: string) => void }) {
   const [tab, setTab] = useState<'profile' | 'vibe' | 'report'>('profile')
   const [liked, setLiked] = useState(false)
   const [reportReason, setReportReason] = useState<ReportReason>('fake_profile')
   const [reportDetails, setReportDetails] = useState('')
   const [reportSent, setReportSent] = useState(false)
+  const [blocked, setBlocked] = useState(false)
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
@@ -684,6 +685,9 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage }: { user: SeedW
                   </select>
                   <textarea value={reportDetails} onChange={e => setReportDetails(e.target.value)} placeholder="Additional details (optional)" rows={3} style={{ background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 14, outline: 'none', resize: 'none' }} />
                   <button onClick={async () => { if (!myId || user.isSeed) return; await submitReport(myId, user.id, reportReason, reportDetails); setReportSent(true) }} style={{ padding: '12px', borderRadius: 12, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444', fontWeight: 700, fontSize: 14 }}>Submit Report</button>
+                  <button onClick={() => { if (user.isSeed) return; setBlocked(true); onBlock(user.id); setTimeout(onClose, 400) }} disabled={blocked} style={{ padding: '12px', borderRadius: 12, background: blocked ? C.surf3 : 'rgba(107,114,128,0.15)', border: `1px solid ${blocked ? C.border : 'rgba(107,114,128,0.4)'}`, color: blocked ? C.dim : C.muted, fontWeight: 700, fontSize: 14 }}>
+                    {blocked ? '✓ Blocked' : '🚫 Block User'}
+                  </button>
                 </div>
               )}
             </div>
@@ -1539,9 +1543,25 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [myProfile, setMyProfile] = useState<Partial<Profile> | null>(null)
   const [nearby, setNearby] = useState<(Profile & { isSeed?: boolean })[]>(SEEDS)
+  // Derived: seeds always visible, real users filtered by blocklist
+  const visibleNearby = nearby.filter(u => (u as any).isSeed || !blockedIds.has(u.id))
   const [myPos, setMyPos] = useState({ x: 50, y: 50 })
   const [screen, setScreen] = useState<Screen>('map')
   const [selectedUser, setSelectedUser] = useState<(Profile & { isSeed?: boolean }) | null>(null)
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null)
+  const [blockedIds, setBlockedIds] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('he_blocked_ids') ?? '[]')) } catch { return new Set() }
+  })
+
+  const handleBlock = (id: string) => {
+    setBlockedIds(prev => {
+      const next = new Set(prev)
+      next.add(id)
+      localStorage.setItem('he_blocked_ids', JSON.stringify([...next]))
+      return next
+    })
+    setSelectedUser(null)
+  }
   const [activeMatch, setActiveMatch] = useState<{ match: Match; other: Profile } | null>(null)
   const [activeSeedChat, setActiveSeedChat] = useState<SeedWithAI | null>(null)
   const [editingProfile, setEditingProfile] = useState(false)
@@ -1814,35 +1834,79 @@ export default function App() {
       {/* Main */}
       <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {screen === 'map' && (
-          <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={nearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} />
+          <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} />
         )}
-        {screen === 'list' && (
-          <div>
-            {nearby.map(u => {
-              const distM = nearbyDistances.get(u.id)
-              const distLabel = distM !== undefined
-                ? (distM < 50 ? 'right here' : distM < 1000 ? `${Math.round(distM / 10) * 10}m` : `${(distM / 1609.34).toFixed(1)}mi`)
-                : null
-              return (
-                <div key={u.id} onClick={() => setSelectedUser(u)} style={{ display: 'flex', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
-                  <Avatar user={u} size={50} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 700 }}>{u.name}</span>
-                      <span style={{ color: C.muted, fontSize: 13 }}>{u.age}</span>
-                      {distLabel && (
-                        <span style={{ fontSize: 10, color: C.green, background: `${C.green}18`, padding: '2px 7px', borderRadius: 8, fontFamily: FONT, fontWeight: 600 }}>📍 {distLabel}</span>
-                      )}
-                      <span style={{ marginLeft: 'auto', fontSize: 11, color: u.color, background: `${u.color}22`, padding: '2px 8px', borderRadius: 10 }}>{u.role}</span>
-                    </div>
-                    <div style={{ fontSize: 13, color: C.dim, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.bio || 'No bio'}</div>
-                    {u.cruising_status && <div style={{ fontSize: 11, color: C.amber, marginTop: 4 }}>● {u.cruising_status}</div>}
-                  </div>
+        {screen === 'list' && (() => {
+          // Collect all unique tags from visible users
+          const allTags = [...new Set(visibleNearby.flatMap(u => u.tags ?? []))].sort()
+          const filtered = activeTagFilter
+            ? visibleNearby.filter(u => u.tags?.includes(activeTagFilter))
+            : visibleNearby
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              {/* Tag filter bar */}
+              {allTags.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, padding: '10px 14px', overflowX: 'auto', borderBottom: `1px solid ${C.border}`, flexShrink: 0, scrollbarWidth: 'none' }}>
+                  <button
+                    onClick={() => setActiveTagFilter(null)}
+                    style={{ padding: '5px 12px', borderRadius: 20, background: !activeTagFilter ? C.accent : C.surf2, color: !activeTagFilter ? '#fff' : C.dim, fontSize: 12, fontWeight: !activeTagFilter ? 700 : 400, whiteSpace: 'nowrap', border: `1px solid ${!activeTagFilter ? C.accent : C.border2}`, flexShrink: 0 }}
+                  >All</button>
+                  {allTags.map(tag => (
+                    <button
+                      key={tag}
+                      onClick={() => setActiveTagFilter(activeTagFilter === tag ? null : tag)}
+                      style={{ padding: '5px 12px', borderRadius: 20, background: activeTagFilter === tag ? C.accent : C.surf2, color: activeTagFilter === tag ? '#fff' : C.dim, fontSize: 12, fontWeight: activeTagFilter === tag ? 700 : 400, whiteSpace: 'nowrap', border: `1px solid ${activeTagFilter === tag ? C.accent : C.border2}`, flexShrink: 0 }}
+                    >{tag}</button>
+                  ))}
                 </div>
-              )
-            })}
-          </div>
-        )}
+              )}
+              {/* User list */}
+              <div style={{ overflowY: 'auto', flex: 1 }}>
+                {filtered.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: 40, color: C.dim }}>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>🏷️</div>
+                    <div style={{ fontSize: 14 }}>No one nearby with tag "{activeTagFilter}"</div>
+                    <button onClick={() => setActiveTagFilter(null)} style={{ marginTop: 12, color: C.accent, fontSize: 13 }}>Clear filter</button>
+                  </div>
+                )}
+                {filtered.map(u => {
+                  const distM = nearbyDistances.get(u.id)
+                  const distLabel = distM !== undefined
+                    ? (distM < 50 ? 'right here' : distM < 1000 ? `${Math.round(distM / 10) * 10}m` : `${(distM / 1609.34).toFixed(1)}mi`)
+                    : null
+                  return (
+                    <div key={u.id} onClick={() => setSelectedUser(u)} style={{ display: 'flex', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                      <Avatar user={u} size={50} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700 }}>{u.name}</span>
+                          <span style={{ color: C.muted, fontSize: 13 }}>{u.age}</span>
+                          {distLabel && (
+                            <span style={{ fontSize: 10, color: C.green, background: `${C.green}18`, padding: '2px 7px', borderRadius: 8, fontFamily: FONT, fontWeight: 600 }}>📍 {distLabel}</span>
+                          )}
+                          <span style={{ marginLeft: 'auto', fontSize: 11, color: u.color, background: `${u.color}22`, padding: '2px 8px', borderRadius: 10 }}>{u.role}</span>
+                        </div>
+                        <div style={{ fontSize: 13, color: C.dim, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.bio || 'No bio'}</div>
+                        {u.cruising_status && <div style={{ fontSize: 11, color: C.amber, marginTop: 4 }}>● {u.cruising_status}</div>}
+                        {u.tags && u.tags.length > 0 && (
+                          <div style={{ display: 'flex', gap: 4, marginTop: 5, flexWrap: 'wrap' }}>
+                            {u.tags.slice(0, 4).map(tag => (
+                              <span
+                                key={tag}
+                                onClick={e => { e.stopPropagation(); setActiveTagFilter(activeTagFilter === tag ? null : tag) }}
+                                style={{ fontSize: 10, color: activeTagFilter === tag ? C.accent : C.dim, background: activeTagFilter === tag ? `${C.accent}22` : C.surf3, padding: '2px 7px', borderRadius: 8, fontFamily: FONT, cursor: 'pointer', border: `1px solid ${activeTagFilter === tag ? C.accent + '44' : 'transparent'}` }}
+                              >{tag}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
         {screen === 'matches' && user && (
           <MatchesScreen userId={user.id} onOpenChat={(match, other) => setActiveMatch({ match, other })} />
         )}
@@ -1963,6 +2027,7 @@ export default function App() {
               setScreen('matches')
             }
           }}
+          onBlock={handleBlock}
         />
       )}
 
