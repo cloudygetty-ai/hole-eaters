@@ -996,7 +996,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   const onlineCount = nearby.filter(u => u.online).length
 
   return (
-    <div data-map="1" role="region" aria-label="Cruising map" style={{ flex: 1, height: '100%', position: 'relative', overflow: 'hidden', background: `radial-gradient(ellipse at center, #0d1a12 0%, ${C.bg} 100%)` }}>
+    <div style={{ flex: 1, position: 'relative', minHeight: 0 }}><div data-map="1" role="region" aria-label="Cruising map" style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: `radial-gradient(ellipse at center, #0d1a12 0%, ${C.bg} 100%)` }}>
       {/* Grid */}
       <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.04, pointerEvents: 'none' }}>
         <defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#22c55e" strokeWidth="0.5" /></pattern></defs>
@@ -1053,6 +1053,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
           <span style={{ fontSize: 16 }}>📡</span> Start Pulse Room
         </button>
       )}
+    </div>
     </div>
   )
 }
