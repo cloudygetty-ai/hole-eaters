@@ -828,7 +828,7 @@ function MediaUploadStep({ photoUrl, videoUrl, color, emoji, onPhoto, onVideo }:
 
   const isPhoto = tab === 'photo'
   const currentUrl = isPhoto ? photoUrl : videoUrl
-  const maxMB = isPhoto ? 10 : 50
+  const maxMB = isPhoto ? 60 : 150
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
