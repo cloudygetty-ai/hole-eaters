@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase, signInAnon, upsertProfile, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat } from './lib/supabase'
+import { supabase, signInAnon, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, GlobalMessage } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
@@ -1302,6 +1302,132 @@ function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boole
   )
 }
 
+// ─── Profile Editor ───────────────────────────────────────────────────────────
+function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>; onSave: (updated: Partial<Profile>) => Promise<void>; onClose: () => void }) {
+  const [form, setForm] = useState({
+    name: profile.name ?? '',
+    age: String(profile.age ?? ''),
+    role: profile.role ?? 'Versatile',
+    bio: profile.bio ?? '',
+    emoji: profile.emoji ?? '🔥',
+    color: profile.color ?? C.accent,
+    tags: profile.tags ?? [] as string[],
+  })
+  const [newTag, setNewTag] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const inputStyle: React.CSSProperties = {
+    background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 12,
+    padding: '12px 14px', color: C.text, fontSize: 14, width: '100%', outline: 'none',
+  }
+
+  const handleSave = async () => {
+    if (!form.name.trim() || Number(form.age) < 18) return
+    setSaving(true)
+    await onSave({
+      name: form.name.trim(),
+      age: Number(form.age),
+      role: form.role,
+      bio: form.bio.trim(),
+      emoji: form.emoji,
+      color: form.color,
+      tags: form.tags,
+    })
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => { setSaved(false); onClose() }, 800)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 600, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }} onClick={onClose} />
+      <div style={{ position: 'relative', background: C.surf2, borderRadius: '22px 22px 0 0', maxHeight: '92vh', display: 'flex', flexDirection: 'column', animation: 'slideUp 0.25s ease' }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 14px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>Edit Profile</div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={onClose} style={{ color: C.dim, fontSize: 18, padding: '0 4px' }}>✕</button>
+          </div>
+        </div>
+
+        {/* Scrollable fields */}
+        <div style={{ overflowY: 'auto', padding: '20px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Name + Age row */}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ flex: 2 }}>
+              <div style={{ fontSize: 11, color: C.dim, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Name</div>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} maxLength={30} style={inputStyle} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: C.dim, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Age</div>
+              <input value={form.age} onChange={e => setForm(f => ({ ...f, age: e.target.value }))} type="number" min={18} max={99} style={inputStyle} />
+            </div>
+          </div>
+
+          {/* Role */}
+          <div>
+            <div style={{ fontSize: 11, color: C.dim, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Role</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {ROLES.map(r => (
+                <button key={r} onClick={() => setForm(f => ({ ...f, role: r }))} style={{ padding: '8px 14px', borderRadius: 20, background: form.role === r ? `${C.accent}22` : C.surf3, border: `1px solid ${form.role === r ? C.accent : C.border2}`, color: form.role === r ? C.accent : C.muted, fontWeight: form.role === r ? 700 : 400, fontSize: 13, transition: 'all 0.15s' }}>{r}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Emoji + Color */}
+          <div>
+            <div style={{ fontSize: 11, color: C.dim, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Vibe</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+              {EMOJIS.map(e => (
+                <button key={e} onClick={() => setForm(f => ({ ...f, emoji: e }))} style={{ width: 44, height: 44, fontSize: 24, borderRadius: 10, background: form.emoji === e ? `${C.accent}22` : C.surf3, border: `2px solid ${form.emoji === e ? C.accent : 'transparent'}`, transition: 'all 0.15s' }}>{e}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {COLORS.map(col => (
+                <button key={col} onClick={() => setForm(f => ({ ...f, color: col }))} style={{ width: 32, height: 32, borderRadius: '50%', background: col, border: `3px solid ${form.color === col ? '#fff' : 'transparent'}`, transition: 'border 0.15s' }} />
+              ))}
+            </div>
+          </div>
+
+          {/* Bio */}
+          <div>
+            <div style={{ fontSize: 11, color: C.dim, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Bio</div>
+            <textarea value={form.bio} onChange={e => setForm(f => ({ ...f, bio: e.target.value }))} rows={3} maxLength={200} placeholder="Say something..." style={{ ...inputStyle, resize: 'none', lineHeight: 1.5 }} />
+          </div>
+
+          {/* Tags */}
+          <div>
+            <div style={{ fontSize: 11, color: C.dim, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Tags</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+              {form.tags.map(t => (
+                <span key={t} onClick={() => setForm(f => ({ ...f, tags: f.tags.filter(x => x !== t) }))} style={{ fontSize: 12, color: C.dim, background: C.surf3, padding: '4px 10px', borderRadius: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {t} <span style={{ opacity: 0.5 }}>✕</span>
+                </span>
+              ))}
+            </div>
+            <input value={newTag} onChange={e => setNewTag(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
+              onKeyDown={e => { if (e.key === 'Enter' && newTag.trim() && form.tags.length < 8) { setForm(f => ({ ...f, tags: [...f.tags, newTag.trim()] })); setNewTag('') } }}
+              placeholder="Add tag (Enter)" maxLength={20}
+              style={{ ...inputStyle, width: '100%' }} />
+          </div>
+
+          {/* Save button */}
+          <button
+            onClick={handleSave}
+            disabled={saving || !form.name.trim() || Number(form.age) < 18}
+            style={{ width: '100%', padding: '15px', borderRadius: 14, background: saved ? C.green : C.accent, color: '#fff', fontWeight: 800, fontSize: 16, opacity: saving ? 0.7 : 1, transition: 'all 0.2s', marginBottom: 8 }}
+          >
+            {saved ? '✓ Saved' : saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Root ─────────────────────────────────────────────────────────────────────
 type Screen = 'map' | 'list' | 'matches' | 'global' | 'profile'
 
@@ -1314,6 +1440,9 @@ export default function App() {
   const [selectedUser, setSelectedUser] = useState<(Profile & { isSeed?: boolean }) | null>(null)
   const [activeMatch, setActiveMatch] = useState<{ match: Match; other: Profile } | null>(null)
   const [activeSeedChat, setActiveSeedChat] = useState<SeedWithAI | null>(null)
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null)
+  const [nearbyDistances, setNearbyDistances] = useState<Map<string, number>>(new Map())
   const [cruisingStatus, setCruisingStatus] = useState<string | null>(null)
 
   // ── Ghost Mode ──
@@ -1418,14 +1547,68 @@ export default function App() {
     })
   }, [user])
 
+  // ── GPS: real coords → Supabase + nearby fetch + distance calc ──
   useEffect(() => {
     if (!user) return
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(pos => {
-        getNearbyUsers(pos.coords.latitude, pos.coords.longitude).then(({ data }) => {
-          if (data && data.length > 0) setNearby(data as Profile[])
-        })
-      }, () => setNearby(SEEDS))
+
+    // Haversine distance in meters
+    function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+      const R = 6371000
+      const dLat = (lat2 - lat1) * Math.PI / 180
+      const dLon = (lon2 - lon1) * Math.PI / 180
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+    }
+
+    // @ts-ignore
+    function fmtDistance(m: number): string {
+      if (m < 50) return 'right here'
+      if (m < 1000) return `${Math.round(m / 10) * 10}m`
+      return `${(m / 1609.34).toFixed(1)}mi`
+    }
+
+    const handlePosition = (pos: GeolocationPosition) => {
+      const { latitude: lat, longitude: lng } = pos.coords
+      setGpsCoords({ lat, lng })
+
+      // Sync to Supabase (best-effort, don't block UI)
+      updateLocation(user.id, lat, lng).catch(() => {})
+
+      // Fetch nearby + compute distances
+      getNearbyUsers(lat, lng).then(({ data }) => {
+        if (data && data.length > 0) {
+          const profiles = data as (Profile & { location?: { lat: number; lng: number } | null })[]
+          setNearby(profiles)
+
+          // Build distance map from GPS data returned by Supabase RPC
+          const dm = new Map<string, number>()
+          profiles.forEach(p => {
+            if (p.location?.lat && p.location?.lng) {
+              dm.set(p.id, haversine(lat, lng, p.location.lat, p.location.lng))
+            }
+          })
+          setNearbyDistances(dm)
+        } else {
+          setNearby(SEEDS)
+        }
+      })
+    }
+
+    if (!navigator.geolocation) { setNearby(SEEDS); return }
+
+    // Initial position
+    navigator.geolocation.getCurrentPosition(handlePosition, () => setNearby(SEEDS), { enableHighAccuracy: true })
+
+    // Watch for movement — re-fetch nearby every position update
+    const watchId = navigator.geolocation.watchPosition(handlePosition, () => {}, {
+      enableHighAccuracy: true, maximumAge: 30000, timeout: 10000,
+    })
+
+    // Mark online, mark offline on unmount
+    setOnline(user.id, true).catch(() => {})
+    return () => {
+      navigator.geolocation.clearWatch(watchId)
+      setOnline(user.id, false).catch(() => {})
     }
   }, [user])
 
@@ -1445,6 +1628,17 @@ export default function App() {
   }
 
   const handleMovePin = useCallback((pos: { x: number; y: number }) => { setMyPos(pos) }, [])
+
+  const handleProfileSave = async (updated: Partial<Profile>) => {
+    if (!user) return
+    const merged = { ...myProfile, ...updated, id: user.id } as Profile & { id: string }
+    const { data, error } = await upsertProfile(merged)
+    if (!error) {
+      const saved = data ?? merged
+      setMyProfile(saved)
+      localStorage.setItem('he_local_profile', JSON.stringify(saved))
+    }
+  }
 
   if (activeSeedChat) return <SeedChat seed={activeSeedChat} onBack={() => setActiveSeedChat(null)} />
   if (activeMatch) return <ChatScreen match={activeMatch.match} myId={user!.id} other={activeMatch.other} onBack={() => setActiveMatch(null)} />
@@ -1488,20 +1682,29 @@ export default function App() {
         )}
         {screen === 'list' && (
           <div>
-            {nearby.map(u => (
-              <div key={u.id} onClick={() => setSelectedUser(u)} style={{ display: 'flex', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
-                <Avatar user={u} size={50} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontWeight: 700 }}>{u.name}</span>
-                    <span style={{ color: C.muted, fontSize: 13 }}>{u.age}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 11, color: u.color, background: `${u.color}22`, padding: '2px 8px', borderRadius: 10 }}>{u.role}</span>
+            {nearby.map(u => {
+              const distM = nearbyDistances.get(u.id)
+              const distLabel = distM !== undefined
+                ? (distM < 50 ? 'right here' : distM < 1000 ? `${Math.round(distM / 10) * 10}m` : `${(distM / 1609.34).toFixed(1)}mi`)
+                : null
+              return (
+                <div key={u.id} onClick={() => setSelectedUser(u)} style={{ display: 'flex', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                  <Avatar user={u} size={50} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700 }}>{u.name}</span>
+                      <span style={{ color: C.muted, fontSize: 13 }}>{u.age}</span>
+                      {distLabel && (
+                        <span style={{ fontSize: 10, color: C.green, background: `${C.green}18`, padding: '2px 7px', borderRadius: 8, fontFamily: FONT, fontWeight: 600 }}>📍 {distLabel}</span>
+                      )}
+                      <span style={{ marginLeft: 'auto', fontSize: 11, color: u.color, background: `${u.color}22`, padding: '2px 8px', borderRadius: 10 }}>{u.role}</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: C.dim, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.bio || 'No bio'}</div>
+                    {u.cruising_status && <div style={{ fontSize: 11, color: C.amber, marginTop: 4 }}>● {u.cruising_status}</div>}
                   </div>
-                  <div style={{ fontSize: 13, color: C.dim, marginTop: 3 }}>{u.bio || 'No bio'}</div>
-                  {u.cruising_status && <div style={{ fontSize: 11, color: C.amber, marginTop: 4 }}>📍 {u.cruising_status}</div>}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
         {screen === 'matches' && user && (
@@ -1511,52 +1714,79 @@ export default function App() {
           <GlobalChat userId={user?.id ?? null} isGhost={isGhost} />
         )}
         {screen === 'profile' && (
-          <div style={{ padding: 20 }}>
-            <div style={{ textAlign: 'center', marginBottom: 24 }}>
-              <Avatar user={{ ...myProfile, online: true }} size={80} ghost={isGhost} />
-              <div style={{ fontWeight: 800, fontSize: 22, marginTop: 12 }}>{myProfile.name}</div>
-              <div style={{ color: C.muted, fontSize: 14 }}>{myProfile.role} · {myProfile.age}</div>
-              {isGhost && <div style={{ color: C.ghost, fontSize: 12, marginTop: 6 }}>👻 Ghost Mode Active</div>}
-            </div>
-
-            {/* Ghost toggle in profile */}
-            <div style={{ background: isGhost ? 'rgba(100,255,218,0.06)' : C.surf2, border: `1px solid ${isGhost ? C.ghost + '33' : C.border}`, borderRadius: 14, padding: '14px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 24 }}>👻</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: isGhost ? C.ghost : C.text }}>Ghost Mode</div>
-                <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>Invisible on map. Chat anonymously. Reveal by liking.</div>
+          <div style={{ overflowY: 'auto' }}>
+            {/* Hero */}
+            <div style={{ background: `linear-gradient(180deg, ${myProfile.color}18, transparent)`, padding: '28px 20px 20px', textAlign: 'center' }}>
+              <div style={{ position: 'relative', display: 'inline-block' }}>
+                <Avatar user={{ ...myProfile, online: true }} size={88} ghost={isGhost} />
+                <button onClick={() => setEditingProfile(true)} style={{ position: 'absolute', bottom: 0, right: -4, width: 28, height: 28, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>✏️</button>
               </div>
-              <button onClick={() => setIsGhost(g => !g)} style={{ width: 44, height: 24, borderRadius: 12, background: isGhost ? C.ghost : C.surf3, border: 'none', position: 'relative', transition: 'background 0.2s' }}>
-                <div style={{ position: 'absolute', top: 2, left: isGhost ? 22 : 2, width: 20, height: 20, borderRadius: '50%', background: isGhost ? C.bg : C.dim, transition: 'left 0.2s' }} />
+              <div style={{ fontWeight: 800, fontSize: 22, marginTop: 12 }}>{myProfile.name}</div>
+              <div style={{ color: C.muted, fontSize: 14, marginTop: 2 }}>{myProfile.role} · {myProfile.age}</div>
+              {myProfile.tags && myProfile.tags.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', marginTop: 10 }}>
+                  {myProfile.tags.map(t => <span key={t} style={{ fontSize: 11, color: C.dim, background: C.surf3, padding: '3px 9px', borderRadius: 12, fontFamily: FONT }}>{t}</span>)}
+                </div>
+              )}
+              {myProfile.bio && <div style={{ fontSize: 13, color: C.muted, marginTop: 10, lineHeight: 1.5, maxWidth: 280, margin: '10px auto 0' }}>{myProfile.bio}</div>}
+              <button onClick={() => setEditingProfile(true)} style={{ marginTop: 14, padding: '9px 24px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>
+                Edit Profile
               </button>
             </div>
 
-            {/* Cruising status */}
-            <div style={{ fontSize: 12, color: C.dim, marginBottom: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Cruising Status</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {CRUISING.map(s => (
-                <button key={s} onClick={() => setCruisingStatus(cruisingStatus === s ? null : s)} style={{ padding: '12px 16px', borderRadius: 12, background: cruisingStatus === s ? `${C.amber}22` : C.surf2, border: `1px solid ${cruisingStatus === s ? C.amber : C.border}`, color: cruisingStatus === s ? C.amber : C.text, fontWeight: cruisingStatus === s ? 700 : 400, textAlign: 'left', fontSize: 14 }}>
-                  {s}
+            <div style={{ padding: '0 16px 32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Ghost Mode */}
+              <div style={{ background: isGhost ? 'rgba(100,255,218,0.06)' : C.surf2, border: `1px solid ${isGhost ? C.ghost + '33' : C.border}`, borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 22 }}>👻</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: isGhost ? C.ghost : C.text }}>Ghost Mode</div>
+                  <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>Invisible on map · anonymous in chat · reveal on like</div>
+                </div>
+                <button onClick={() => setIsGhost(g => !g)} style={{ width: 44, height: 24, borderRadius: 12, background: isGhost ? C.ghost : C.surf3, border: 'none', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+                  <div style={{ position: 'absolute', top: 2, left: isGhost ? 22 : 2, width: 20, height: 20, borderRadius: '50%', background: isGhost ? C.bg : C.dim, transition: 'left 0.2s' }} />
                 </button>
-              ))}
-            </div>
-
-            {/* Pulse Rooms */}
-            {pulseRooms.length > 0 && (
-              <div style={{ marginTop: 24 }}>
-                <div style={{ fontSize: 12, color: C.dim, marginBottom: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Active Pulse Rooms</div>
-                {pulseRooms.filter(r => Date.now() < r.expiresAt).map(room => (
-                  <div key={room.id} onClick={() => { setActivePulseRoom(room); setScreen('map') }} style={{ padding: '12px 16px', borderRadius: 12, background: `${room.pulseColor}11`, border: `1px solid ${room.pulseColor}33`, marginBottom: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 18 }}>📡</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13, color: room.pulseColor }}>{room.name}</div>
-                      <div style={{ fontSize: 11, color: C.dim }}>{room.memberIds.length} members · expires {new Date(room.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                    </div>
-                    <span style={{ color: C.muted }}>›</span>
-                  </div>
-                ))}
               </div>
-            )}
+
+              {/* Cruising Status */}
+              <div>
+                <div style={{ fontSize: 11, color: C.dim, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Cruising Status</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {CRUISING.map(s => (
+                    <button key={s} onClick={() => setCruisingStatus(cruisingStatus === s ? null : s)} style={{ padding: '11px 16px', borderRadius: 12, background: cruisingStatus === s ? `${C.amber}18` : C.surf2, border: `1px solid ${cruisingStatus === s ? C.amber : C.border}`, color: cruisingStatus === s ? C.amber : C.text, fontWeight: cruisingStatus === s ? 700 : 400, textAlign: 'left', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.15s' }}>
+                      {cruisingStatus === s && <span style={{ fontSize: 10, width: 6, height: 6, borderRadius: '50%', background: C.amber, display: 'inline-block' }} />}
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* GPS Status */}
+              <div style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 16 }}>{gpsCoords ? '📍' : '📍'}</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{gpsCoords ? 'Location active' : 'No GPS signal'}</div>
+                  <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{gpsCoords ? `${gpsCoords.lat.toFixed(4)}, ${gpsCoords.lng.toFixed(4)}` : 'Allow location for real proximity'}</div>
+                </div>
+                <div style={{ marginLeft: 'auto', width: 8, height: 8, borderRadius: '50%', background: gpsCoords ? C.green : C.dim, animation: gpsCoords ? 'pulse 2s infinite' : 'none' }} />
+              </div>
+
+              {/* Active Pulse Rooms */}
+              {pulseRooms.filter(r => Date.now() < r.expiresAt).length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, color: C.dim, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Active Pulse Rooms</div>
+                  {pulseRooms.filter(r => Date.now() < r.expiresAt).map(room => (
+                    <div key={room.id} onClick={() => { setActivePulseRoom(room); setScreen('map') }} style={{ padding: '12px 16px', borderRadius: 12, background: `${room.pulseColor}11`, border: `1px solid ${room.pulseColor}33`, marginBottom: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 16 }}>📡</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: room.pulseColor }}>{room.name}</div>
+                        <div style={{ fontSize: 11, color: C.dim }}>{room.memberIds.length} in room · {new Date(room.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                      </div>
+                      <span style={{ color: C.muted, fontSize: 16 }}>›</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </main>
@@ -1597,6 +1827,15 @@ export default function App() {
               setScreen('matches')
             }
           }}
+        />
+      )}
+
+      {/* Profile Editor modal */}
+      {editingProfile && myProfile && (
+        <ProfileEditor
+          profile={myProfile}
+          onSave={handleProfileSave}
+          onClose={() => setEditingProfile(false)}
         />
       )}
 
