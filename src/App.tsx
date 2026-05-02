@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppNotification } from './lib/push'
-import { supabase, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat } from './lib/supabase'
-import type { Profile, Match, Message, ReportReason, GlobalMessage } from './lib/supabase'
+import { supabase, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans } from './lib/supabase'
+import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -13,6 +13,24 @@ const C = {
   purple: '#a855f7', orange: '#f97316', ghost: '#64ffda', pulse: '#ff4d6d',
 }
 const FONT = "'DM Mono', 'Fira Code', monospace"
+const APP_VERSION = '1.0.0'
+const CHANGELOG: { v: string; date: string; items: string[] }[] = [
+  { v: '1.0.0', date: '2026', items: [
+    'Live Pulse Rooms — proximity-gated ephemeral chat rooms',
+    'Ghost Mode — invisible on map, anonymous in Whore-izon',
+    'AI seed characters — Claude-powered personas on the map',
+    'Voice notes in 1:1 chat',
+    'Who Viewed Me log',
+    'Email auth with password reset',
+    'Read receipts + unread badge',
+    'Push notifications for matches and messages',
+    'Block and Pass mechanics',
+    'Share profile link',
+    'Video profile support',
+    'Tag filtering on nearby list',
+    'Real GPS sync + distance display',
+  ]},
+]
 const SANS = "'DM Sans', system-ui, sans-serif"
 const ROLES = ['Top', 'Bottom', 'Versatile', 'Curious', 'Host']
 const EMOJIS = ['🔥', '🐷', '🐻', '😈', '💦', '👅', '⛓️', '🌈']
@@ -1011,15 +1029,12 @@ function MediaUploadStep({ photoUrl, videoUrl, color, emoji, onPhoto, onVideo }:
   )
 }
 
-// Legacy alias used by onboarding
-function PhotoUploadStep({ onPhoto, currentUrl, color, emoji }: { onPhoto: (url: string) => void; currentUrl: string | null; color: string; emoji: string }) {
-  return <MediaUploadStep photoUrl={currentUrl} videoUrl={null} color={color} emoji={emoji} onPhoto={onPhoto} onVideo={() => {}} />
-}
+
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => void }) {
   const [step, setStep] = useState(0)
-  const [form, setForm] = useState({ name: '', age: '', role: 'Versatile', bio: '', emoji: '🔥', color: C.accent, tags: [] as string[], photo_url: null as string | null })
+  const [form, setForm] = useState({ name: '', age: '', role: 'Versatile', bio: '', emoji: '🔥', color: C.accent, tags: [] as string[], photo_url: null as string | null, video_url: null as string | null })
   const [newTag, setNewTag] = useState('')
   const inputStyle: React.CSSProperties = { background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 12, padding: '13px 16px', color: C.text, fontSize: 15, width: '100%', outline: 'none' }
 
@@ -1027,7 +1042,7 @@ function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => void 
     { title: "What do they call you?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Your name or handle" style={inputStyle} /><input value={form.age} onChange={e => setForm(f => ({ ...f, age: e.target.value }))} placeholder="Age (18+)" type="number" style={inputStyle} /></div>), valid: () => form.name.trim().length > 0 && Number(form.age) >= 18 },
     { title: "Your role?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{ROLES.map(r => (<button key={r} onClick={() => setForm(f => ({ ...f, role: r }))} style={{ padding: '14px', borderRadius: 12, background: form.role === r ? `${C.accent}22` : C.surf3, border: `1px solid ${form.role === r ? C.accent : C.border2}`, color: form.role === r ? C.accent : C.text, fontWeight: form.role === r ? 700 : 400, fontSize: 15, textAlign: 'left' }}>{r}</button>))}</div>), valid: () => true },
     { title: "Pick your vibe", content: (<div><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>{EMOJIS.map(e => (<button key={e} onClick={() => setForm(f => ({ ...f, emoji: e }))} style={{ width: 52, height: 52, fontSize: 28, borderRadius: 12, background: form.emoji === e ? `${C.accent}22` : C.surf3, border: `2px solid ${form.emoji === e ? C.accent : 'transparent'}` }}>{e}</button>))}</div><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{COLORS.map(col => (<button key={col} onClick={() => setForm(f => ({ ...f, color: col }))} style={{ width: 36, height: 36, borderRadius: '50%', background: col, border: `3px solid ${form.color === col ? '#fff' : 'transparent'}` }} />))}</div></div>), valid: () => true },
-    { title: "Add a photo", content: (<PhotoUploadStep onPhoto={(url) => setForm(f => ({ ...f, photo_url: url }))} currentUrl={form.photo_url} color={form.color} emoji={form.emoji} />), valid: () => true },
+    { title: "Add a photo", content: (<MediaUploadStep photoUrl={form.photo_url} videoUrl={form.video_url ?? null} color={form.color} emoji={form.emoji} onPhoto={(url) => setForm(f => ({ ...f, photo_url: url }))} onVideo={(url) => setForm(f => ({ ...f, video_url: url }))} />), valid: () => true },
     { title: "Tell them something", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}><textarea value={form.bio} onChange={e => setForm(f => ({ ...f, bio: e.target.value }))} placeholder="Bio (optional)" rows={3} style={{ ...inputStyle, resize: 'none' }} /><input value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newTag.trim()) { setForm(f => ({ ...f, tags: [...f.tags, newTag.trim()] })); setNewTag('') } }} placeholder="Add tag (Enter)" style={{ ...inputStyle }} /><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{form.tags.map(t => (<span key={t} onClick={() => setForm(f => ({ ...f, tags: f.tags.filter(x => x !== t) }))} style={{ fontSize: 12, color: C.dim, background: C.surf3, padding: '4px 10px', borderRadius: 12, cursor: 'pointer' }}>{t} ✕</span>))}</div></div>), valid: () => true },
   ]
 
@@ -1851,6 +1866,226 @@ function OfflineBanner() {
   )
 }
 
+// ─── Pass Undo Toast ──────────────────────────────────────────────────────────
+// Mounted inline in Root — notified via callback
+
+// ─── Admin Dashboard ──────────────────────────────────────────────────────────
+function AdminDashboard({ onClose }: { onClose: () => void }) {
+  const [tab, setTab] = useState<'stats' | 'reports' | 'users' | 'bans'>('stats')
+  const [stats, setStats] = useState<any>(null)
+  const [reports, setReports] = useState<any[]>([])
+  const [users, setUsers] = useState<any[]>([])
+  const [bans, setBans] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [adminId, setAdminId] = useState('')
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setAdminId(data.user?.id ?? ''))
+    load()
+  }, [])
+
+  const load = async () => {
+    setLoading(true)
+    const [s, r, u, b] = await Promise.all([
+      getAdminStats(),
+      getReports('pending'),
+      getAllProfiles(),
+      getBans(),
+    ])
+    if (s.data) setStats(s.data)
+    if (r.data) setReports(r.data as any[])
+    if (u.data) setUsers(u.data as any[])
+    if (b.data) setBans(b.data as any[])
+    setLoading(false)
+  }
+
+  const handleBan = async (userId: string, reason: string) => {
+    await banUser(userId, adminId, reason)
+    await load()
+  }
+
+  const handleAction = async (reportId: string, status: ReportStatus, action?: string) => {
+    await updateReportStatus(reportId, status, adminId, action)
+    setReports(prev => prev.filter(r => r.id !== reportId))
+  }
+
+  const TABS = [
+    { id: 'stats', label: '📊 Stats' },
+    { id: 'reports', label: `🚨 Reports${reports.length ? ` (${reports.length})` : ''}` },
+    { id: 'users', label: '👥 Users' },
+    { id: 'bans', label: '🚫 Bans' },
+  ] as const
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 900, background: C.bg, display: 'flex', flexDirection: 'column', animation: 'fadeIn 0.2s ease' }}>
+      <style>{GCSS}</style>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        <button onClick={onClose} style={{ color: C.muted, fontSize: 20 }}>←</button>
+        <div style={{ fontWeight: 800, fontSize: 15 }}>⚙️ Admin Dashboard</div>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: C.dim, fontFamily: FONT }}>v{APP_VERSION}</div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, flexShrink: 0, overflowX: 'auto' }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id as any)} style={{ padding: '11px 16px', fontSize: 13, fontWeight: tab === t.id ? 700 : 400, color: tab === t.id ? C.accent : C.dim, borderBottom: `2px solid ${tab === t.id ? C.accent : 'transparent'}`, whiteSpace: 'nowrap' }}>{t.label}</button>
+        ))}
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+        {loading && <div style={{ textAlign: 'center', color: C.dim, padding: 40 }}>Loading...</div>}
+
+        {/* Stats */}
+        {!loading && tab === 'stats' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {stats && Object.entries(stats).map(([key, val]) => (
+              <div key={key} style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16 }}>
+                <div style={{ fontSize: 24, fontWeight: 800, color: C.accent }}>{String(val)}</div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 4, textTransform: 'capitalize' }}>{key.replace(/_/g, ' ')}</div>
+              </div>
+            ))}
+            {!stats && <div style={{ color: C.dim, fontSize: 13, gridColumn: '1/-1' }}>No stats view configured in Supabase yet.</div>}
+            <div style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16 }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: C.accent }}>{users.length}</div>
+              <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>Total Users</div>
+            </div>
+            <div style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16 }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: '#ef4444' }}>{reports.length}</div>
+              <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>Pending Reports</div>
+            </div>
+            <div style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16 }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: C.amber }}>{bans.length}</div>
+              <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>Active Bans</div>
+            </div>
+          </div>
+        )}
+
+        {/* Reports */}
+        {!loading && tab === 'reports' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {reports.length === 0 && <div style={{ textAlign: 'center', color: C.dim, padding: 40 }}>No pending reports 🎉</div>}
+            {reports.map((r: any) => (
+              <div key={r.id} style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16 }}>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{r.reported?.name ?? 'Unknown'} <span style={{ color: C.dim, fontWeight: 400 }}>reported for</span> {r.reason}</div>
+                    <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>by {r.reporter?.name ?? 'Unknown'}</div>
+                    {r.details && <div style={{ fontSize: 12, color: C.muted, marginTop: 4, fontStyle: 'italic' }}>"{r.details}"</div>}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => handleAction(r.id, 'actioned', 'warned')} style={{ flex: 1, padding: '8px', borderRadius: 8, background: `${C.amber}22`, border: `1px solid ${C.amber}44`, color: C.amber, fontWeight: 700, fontSize: 12 }}>Warn</button>
+                  <button onClick={() => { handleBan(r.reported?.id, r.reason); handleAction(r.id, 'actioned', 'banned') }} style={{ flex: 1, padding: '8px', borderRadius: 8, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444', fontWeight: 700, fontSize: 12 }}>Ban</button>
+                  <button onClick={() => handleAction(r.id, 'dismissed')} style={{ flex: 1, padding: '8px', borderRadius: 8, background: C.surf3, color: C.dim, fontWeight: 700, fontSize: 12 }}>Dismiss</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Users */}
+        {!loading && tab === 'users' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {users.map((u: any) => (
+              <div key={u.id} style={{ display: 'flex', gap: 10, padding: '10px 0', borderBottom: `1px solid ${C.border}`, alignItems: 'center' }}>
+                <Avatar user={u} size={36} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{u.name}</div>
+                  <div style={{ fontSize: 11, color: C.dim }}>{u.role} · {u.age} · {u.online ? '🟢 online' : '⚫ offline'}</div>
+                </div>
+                <button onClick={() => handleBan(u.id, 'admin action')} style={{ padding: '5px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: 11, fontWeight: 700 }}>Ban</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Bans */}
+        {!loading && tab === 'bans' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {bans.length === 0 && <div style={{ textAlign: 'center', color: C.dim, padding: 40 }}>No active bans</div>}
+            {bans.map((b: any) => (
+              <div key={b.id} style={{ display: 'flex', gap: 10, padding: '10px 0', borderBottom: `1px solid ${C.border}`, alignItems: 'center' }}>
+                <Avatar user={b.profile ?? {}} size={36} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{b.profile?.name ?? b.user_id}</div>
+                  <div style={{ fontSize: 11, color: C.dim }}>{b.reason}</div>
+                </div>
+                <button onClick={() => { unbanUser(b.user_id, adminId); load() }} style={{ padding: '5px 10px', borderRadius: 8, background: `${C.green}18`, color: C.green, fontSize: 11, fontWeight: 700 }}>Unban</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Invite Screen ─────────────────────────────────────────────────────────────
+function InviteBanner({ myProfile }: { myProfile: Partial<Profile> | null }) {
+  const [copied, setCopied] = useState(false)
+  const inviteUrl = `${window.location.origin}?invite=1`
+
+  const share = async () => {
+    const text = `${myProfile?.name ?? 'Someone'} invited you to Hole Eaters — the location-based cruising app ${inviteUrl}`
+    if (navigator.share) {
+      await navigator.share({ title: 'Join Hole Eaters', text, url: inviteUrl }).catch(() => {})
+    } else {
+      await navigator.clipboard.writeText(text).catch(() => {})
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  return (
+    <div style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 16, padding: 16, margin: '0 0 16px' }}>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>🔗 Invite Friends</div>
+      <div style={{ fontSize: 12, color: C.dim, marginBottom: 12, lineHeight: 1.5 }}>
+        More people nearby = more matches. Share your invite link.
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ flex: 1, background: C.surf3, borderRadius: 8, padding: '8px 12px', fontSize: 11, color: C.dim, fontFamily: FONT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {inviteUrl}
+        </div>
+        <button onClick={share} style={{ padding: '8px 16px', borderRadius: 8, background: C.accent, color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+          {copied ? '✓ Copied' : 'Share'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Version / Changelog ───────────────────────────────────────────────────────
+function VersionScreen({ onClose }: { onClose: () => void }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 600, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={onClose} />
+      <div style={{ position: 'relative', background: C.surf2, borderRadius: '22px 22px 0 0', maxHeight: '80vh', overflow: 'auto', animation: 'slideUp 0.25s ease', padding: '20px 20px 40px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 18 }}>The Hole Eaters</div>
+            <div style={{ fontSize: 12, color: C.dim, fontFamily: FONT }}>v{APP_VERSION}</div>
+          </div>
+          <button onClick={onClose} style={{ color: C.dim, fontSize: 18 }}>✕</button>
+        </div>
+        {CHANGELOG.map(entry => (
+          <div key={entry.v} style={{ marginBottom: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{ background: C.accent, color: '#fff', borderRadius: 8, padding: '3px 10px', fontSize: 12, fontWeight: 800, fontFamily: FONT }}>v{entry.v}</div>
+              <div style={{ fontSize: 12, color: C.dim }}>{entry.date}</div>
+            </div>
+            {entry.items.map((item, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, padding: '5px 0', borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ color: C.green, fontSize: 12, flexShrink: 0 }}>✓</span>
+                <span style={{ fontSize: 13, color: C.muted, lineHeight: 1.4 }}>{item}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── Profile Editor ───────────────────────────────────────────────────────────
 function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>; onSave: (updated: Partial<Profile>) => Promise<void>; onClose: () => void }) {
   const [form, setForm] = useState({
@@ -2026,6 +2261,7 @@ export default function App() {
   }
 
   const handlePass = (id: string) => {
+    setLastPassed(id)
     setPassedIds(prev => {
       const next = new Set(prev)
       next.add(id)
@@ -2033,6 +2269,20 @@ export default function App() {
       return next
     })
     setSelectedUser(null)
+    setShowPassUndo(true)
+    setTimeout(() => setShowPassUndo(false), 4000)
+  }
+
+  const handleUndoPass = () => {
+    if (!lastPassed) return
+    setPassedIds(prev => {
+      const next = new Set(prev)
+      next.delete(lastPassed)
+      localStorage.setItem('he_passed_ids', JSON.stringify([...next]))
+      return next
+    })
+    setLastPassed(null)
+    setShowPassUndo(false)
   }
 
   const [activeMatch, setActiveMatch] = useState<{ match: Match; other: Profile } | null>(null)
@@ -2041,8 +2291,19 @@ export default function App() {
   const [showPushPrompt, setShowPushPrompt] = useState(false)
   const [showAuth, setShowAuth] = useState(false)
   const [showViewed, setShowViewed] = useState(false)
+  const [showAdmin, setShowAdmin] = useState(false)
+  const [showVersion, setShowVersion] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [lastPassed, setLastPassed] = useState<string | null>(null)
+  const [showPassUndo, setShowPassUndo] = useState(false)
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0)
+
+  // Check admin status
+  useEffect(() => {
+    if (!user) return
+    checkIsAdmin().then(({ data }) => { if (data) setIsAdmin(true) })
+  }, [user])
 
   // Show push permission prompt once after onboarding/profile load
   useEffect(() => {
@@ -2519,6 +2780,9 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Invite */}
+              <InviteBanner myProfile={myProfile} />
+
               {/* GPS Status */}
               <div style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 16 }}>{gpsCoords ? '📍' : '📍'}</span>
@@ -2527,6 +2791,18 @@ export default function App() {
                   <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>{gpsCoords ? `${gpsCoords.lat.toFixed(4)}, ${gpsCoords.lng.toFixed(4)}` : 'Allow location for real proximity'}</div>
                 </div>
                 <div style={{ marginLeft: 'auto', width: 8, height: 8, borderRadius: '50%', background: gpsCoords ? C.green : C.dim, animation: gpsCoords ? 'pulse 2s infinite' : 'none' }} />
+              </div>
+
+              {/* App info */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setShowVersion(true)} style={{ flex: 1, padding: '10px', borderRadius: 12, background: C.surf2, border: `1px solid ${C.border}`, color: C.dim, fontSize: 12, fontFamily: FONT }}>
+                  v{APP_VERSION} — What's new
+                </button>
+                {isAdmin && (
+                  <button onClick={() => setShowAdmin(true)} style={{ flex: 1, padding: '10px', borderRadius: 12, background: `${C.amber}18`, border: `1px solid ${C.amber}44`, color: C.amber, fontSize: 12, fontWeight: 700 }}>
+                    ⚙️ Admin
+                  </button>
+                )}
               </div>
 
               {/* Active Pulse Rooms */}
@@ -2599,6 +2875,23 @@ export default function App() {
         />
         )
       })()}
+
+      {/* Pass undo toast */}
+      {showPassUndo && (
+        <div style={{ position: 'fixed', bottom: 76, left: 12, right: 12, zIndex: 500, animation: 'slideUp 0.2s ease' }}>
+          <div style={{ background: C.surf2, border: `1px solid ${C.border2}`, borderRadius: 14, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+            <span style={{ fontSize: 16 }}>✕</span>
+            <div style={{ flex: 1, fontSize: 13, color: C.muted }}>Passed</div>
+            <button onClick={handleUndoPass} style={{ padding: '6px 14px', borderRadius: 8, background: C.accent, color: '#fff', fontWeight: 700, fontSize: 13 }}>Undo</button>
+          </div>
+        </div>
+      )}
+
+      {/* Admin dashboard */}
+      {showAdmin && <AdminDashboard onClose={() => setShowAdmin(false)} />}
+
+      {/* Version / changelog */}
+      {showVersion && <VersionScreen onClose={() => setShowVersion(false)} />}
 
       {/* Profile Editor modal */}
       {editingProfile && myProfile && (
