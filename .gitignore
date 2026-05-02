@@ -5,3 +5,5 @@ bundle.html
 *.local
 .env
 .env.*
+.parcel-cache/
+*.mdb
