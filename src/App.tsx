@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppNotification } from './lib/push'
 import { supabase, signInAnon, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, GlobalMessage } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
@@ -1393,6 +1394,73 @@ function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boole
   )
 }
 
+// ─── In-App Toast ─────────────────────────────────────────────────────────────
+interface Toast { id: string; title: string; body: string; tag: string }
+
+function InAppToastContainer() {
+  const [toasts, setToasts] = useState<Toast[]>([])
+
+  useEffect(() => {
+    return onInAppNotification((title, body, tag) => {
+      const id = `${tag}_${Date.now()}`
+      setToasts(prev => [...prev.slice(-2), { id, title, body, tag }])
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000)
+    })
+  }, [])
+
+  if (toasts.length === 0) return null
+
+  return (
+    <div style={{ position: 'fixed', top: 60, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 460, padding: '0 12px', zIndex: 999, display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'none' }}>
+      {toasts.map(t => (
+        <div key={t.id} style={{ background: C.surf2, border: `1px solid ${C.border2}`, borderRadius: 14, padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'center', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', animation: 'slideDown 0.25s ease', pointerEvents: 'auto' }}>
+          <div style={{ width: 36, height: 36, borderRadius: '50%', background: `${C.accent}22`, border: `1px solid ${C.accent}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+            {t.tag.startsWith('match') ? '❤️' : t.tag.startsWith('msg') ? '💬' : '🔔'}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>{t.title}</div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.body}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Push Permission Prompt ────────────────────────────────────────────────────
+function PushPermissionPrompt({ onDone }: { onDone: () => void }) {
+  const [requesting, setRequesting] = useState(false)
+
+  const request = async () => {
+    setRequesting(true)
+    const perm = await requestPushPermission()
+    if (perm === 'granted') await subscribeToPush()
+    onDone()
+  }
+
+  return (
+    <div style={{ position: 'fixed', bottom: 76, left: 12, right: 12, zIndex: 400, animation: 'slideUp 0.3s ease' }}>
+      <div style={{ background: C.surf2, border: `1px solid ${C.accent}33`, borderRadius: 16, padding: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 14 }}>
+          <div style={{ fontSize: 28, lineHeight: 1 }}>🔔</div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Stay in the loop</div>
+            <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.5 }}>Get notified when you match or someone messages you.</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={request} disabled={requesting} style={{ flex: 1, padding: '12px', borderRadius: 12, background: C.accent, color: '#fff', fontWeight: 700, fontSize: 14, opacity: requesting ? 0.7 : 1 }}>
+            {requesting ? 'Enabling...' : 'Enable Notifications'}
+          </button>
+          <button onClick={onDone} style={{ padding: '12px 16px', borderRadius: 12, background: C.surf3, color: C.dim, fontWeight: 600, fontSize: 14 }}>
+            Not now
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Profile Editor ───────────────────────────────────────────────────────────
 function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>; onSave: (updated: Partial<Profile>) => Promise<void>; onClose: () => void }) {
   const [form, setForm] = useState({
@@ -1565,6 +1633,65 @@ export default function App() {
   const [activeMatch, setActiveMatch] = useState<{ match: Match; other: Profile } | null>(null)
   const [activeSeedChat, setActiveSeedChat] = useState<SeedWithAI | null>(null)
   const [editingProfile, setEditingProfile] = useState(false)
+  const [showPushPrompt, setShowPushPrompt] = useState(false)
+
+  // Show push permission prompt once after onboarding/profile load
+  useEffect(() => {
+    if (!user || !myProfile?.name) return
+    if (!pushSupported()) return
+    if (Notification.permission !== 'default') return
+    const shown = localStorage.getItem('he_push_prompted')
+    if (shown) return
+    // Delay 8s so it doesn't interrupt onboarding
+    const t = setTimeout(() => {
+      setShowPushPrompt(true)
+      localStorage.setItem('he_push_prompted', '1')
+    }, 8000)
+    return () => clearTimeout(t)
+  }, [user, myProfile?.name])
+
+  // Subscribe to Supabase realtime matches + messages and fire notifications
+  useEffect(() => {
+    if (!user) return
+
+    // New match notification
+    const matchSub = supabase.channel(`matches_notify_${user.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'matches',
+        filter: `user_b=eq.${user.id}`,
+      }, async (payload) => {
+        const matcherId = payload.new.user_a
+        const { data } = await supabase.from('profiles').select('name,emoji').eq('id', matcherId).single()
+        const name = data?.name ?? 'Someone'
+        const emoji = data?.emoji ?? '🔥'
+        notify(`${emoji} New Match!`, `You and ${name} matched`, 'match', '/')
+      })
+      .subscribe()
+
+    // New message notification (only when not in that chat)
+    const msgSub = supabase.channel(`messages_notify_${user.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'messages',
+      }, async (payload) => {
+        const msg = payload.new
+        if (msg.sender_id === user.id) return  // own message
+        const { data: match } = await supabase.from('matches').select('user_a,user_b').eq('id', msg.match_id).single()
+        if (!match) return
+        const isMyMatch = match.user_a === user.id || match.user_b === user.id
+        if (!isMyMatch) return
+        const senderId = msg.sender_id
+        const { data } = await supabase.from('profiles').select('name,emoji').eq('id', senderId).single()
+        const name = data?.name ?? 'Someone'
+        const emoji = data?.emoji ?? '💬'
+        notify(`${emoji} ${name}`, msg.content?.slice(0, 80) ?? 'Sent you a message', `msg_${msg.match_id}`, '/')
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(matchSub)
+      supabase.removeChannel(msgSub)
+    }
+  }, [user])
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [nearbyDistances, setNearbyDistances] = useState<Map<string, number>>(new Map())
   const [cruisingStatus, setCruisingStatus] = useState<string | null>(null)
@@ -2044,6 +2171,12 @@ export default function App() {
       {activePulseRoom && Date.now() < activePulseRoom.expiresAt && myProfile && (
         <PulseRoomOverlay room={activePulseRoom} myProfile={{ ...myProfile, id: user?.id ?? 'anon' }} onClose={() => setActivePulseRoom(null)} onSend={handlePulseSend} />
       )}
+
+      {/* In-app notifications */}
+      <InAppToastContainer />
+
+      {/* Push permission prompt */}
+      {showPushPrompt && <PushPermissionPrompt onDone={() => setShowPushPrompt(false)} />}
 
       {/* PWA Install */}
       <InstallBanner />
