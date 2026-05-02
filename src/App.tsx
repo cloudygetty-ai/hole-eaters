@@ -532,6 +532,7 @@ function SeedChat({ seed, onBack }: { seed: SeedWithAI; onBack: () => void }) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: C.bg }}>
       <style>{GCSS}</style>
       <a href="#main-content" className="skip-link">Skip to content</a>
+      <OfflineBanner />
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
@@ -620,7 +621,7 @@ function SeedChat({ seed, onBack }: { seed: SeedWithAI; onBack: () => void }) {
 }
 
 // ─── Profile Drawer ───────────────────────────────────────────────────────────
-function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onBlock }: { user: SeedWithAI | (Profile & { isSeed?: false }); myId: string; onClose: () => void; onLike: () => void; onMessage: () => void; onBlock: (id: string) => void }) {
+function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onBlock, onPass }: { user: SeedWithAI | (Profile & { isSeed?: false }); myId: string; onClose: () => void; onLike: () => void; onMessage: () => void; onBlock: (id: string) => void; onPass: (id: string) => void }) {
   const [tab, setTab] = useState<'profile' | 'vibe' | 'report'>('profile')
   const [liked, setLiked] = useState(false)
   const [reportReason, setReportReason] = useState<ReportReason>('fake_profile')
@@ -695,6 +696,9 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onBlock }: { us
           )}
         </div>
         <div style={{ display: 'flex', gap: 10, padding: '8px 20px 0' }}>
+          {!user.isSeed && (
+            <button onClick={() => onPass(user.id)} style={{ width: 46, height: 46, borderRadius: 12, background: 'rgba(107,114,128,0.12)', border: '1px solid rgba(107,114,128,0.25)', color: C.dim, fontWeight: 700, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} aria-label="Pass">✕</button>
+          )}
           <button onClick={() => { setLiked(true); onLike() }} style={{ flex: 1, padding: '13px', borderRadius: 12, background: liked ? `${C.accent}33` : C.surf3, border: `1px solid ${liked ? C.accent : C.border2}`, color: liked ? C.accent : C.text, fontWeight: 700, fontSize: 14 }}>
             {liked ? '❤️ Liked' : '🤙 Like'}
           </button>
@@ -888,7 +892,13 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
 // ─── Matches Screen ───────────────────────────────────────────────────────────
 function MatchesScreen({ userId, onOpenChat, onClearUnread }: { userId: string; onOpenChat: (match: Match, other: Profile) => void; onClearUnread: (matchId: string) => void }) {
   const [matches, setMatches] = useState<any[]>([])
-  useEffect(() => { getMatches(userId).then(({ data }) => { if (data) setMatches(data) }) }, [userId])
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    setLoading(true)
+    getMatches(userId).then(({ data }) => { if (data) setMatches(data); setLoading(false) })
+  }, [userId])
+
+  if (loading) return <MatchesSkeleton />
 
   return (
     <div style={{ padding: 16 }}>
@@ -1782,6 +1792,65 @@ function ViewedMeScreen({ userId }: { userId: string }) {
   )
 }
 
+// ─── Skeleton Loader ──────────────────────────────────────────────────────────
+function Skeleton({ w = '100%', h = 16, radius = 8, style = {} }: { w?: string | number; h?: number; radius?: number; style?: React.CSSProperties }) {
+  return (
+    <div style={{ width: w, height: h, borderRadius: radius, background: `linear-gradient(90deg, ${C.surf2} 25%, ${C.surf3} 50%, ${C.surf2} 75%)`, backgroundSize: '200% 100%', animation: 'shimmer 1.4s infinite', flexShrink: 0, ...style }} />
+  )
+}
+
+function MatchesSkeleton() {
+  return (
+    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 0 }}>
+      {[0,1,2,3].map(i => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.border}` }}>
+          <Skeleton w={48} h={48} radius={24} />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <Skeleton w="55%" h={14} />
+            <Skeleton w="35%" h={11} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function NearbySkeleton() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {[0,1,2,3,4].map(i => (
+        <div key={i} style={{ display: 'flex', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${C.border}` }}>
+          <Skeleton w={50} h={50} radius={25} />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
+            <Skeleton w="45%" h={14} />
+            <Skeleton w="70%" h={12} />
+            <Skeleton w="30%" h={10} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Offline Banner ────────────────────────────────────────────────────────────
+function OfflineBanner() {
+  const [offline, setOffline] = useState(!navigator.onLine)
+  useEffect(() => {
+    const on = () => setOffline(false)
+    const off = () => setOffline(true)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+  if (!offline) return null
+  return (
+    <div style={{ position: 'fixed', top: 52, left: 0, right: 0, zIndex: 900, background: '#92400e', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+      <span>📡</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: '#fef3c7' }}>No connection — some features unavailable</span>
+    </div>
+  )
+}
+
 // ─── Profile Editor ───────────────────────────────────────────────────────────
 function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>; onSave: (updated: Partial<Profile>) => Promise<void>; onClose: () => void }) {
   const [form, setForm] = useState({
@@ -1932,12 +2001,16 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [myProfile, setMyProfile] = useState<Partial<Profile> | null>(null)
   const [nearby, setNearby] = useState<(Profile & { isSeed?: boolean })[]>(SEEDS)
+  const [nearbyLoading, setNearbyLoading] = useState(true)
   // Derived: seeds always visible, real users filtered by blocklist
-  const visibleNearby = nearby.filter(u => (u as any).isSeed || !blockedIds.has(u.id))
+  const visibleNearby = nearby.filter(u => (u as any).isSeed || (!blockedIds.has(u.id) && !passedIds.has(u.id)))
   const [myPos, setMyPos] = useState({ x: 50, y: 50 })
   const [screen, setScreen] = useState<Screen>('map')
   const [selectedUser, setSelectedUser] = useState<(Profile & { isSeed?: boolean }) | null>(null)
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null)
+  const [passedIds, setPassedIds] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('he_passed_ids') ?? '[]')) } catch { return new Set() }
+  })
   const [blockedIds, setBlockedIds] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem('he_blocked_ids') ?? '[]')) } catch { return new Set() }
   })
@@ -1951,6 +2024,17 @@ export default function App() {
     })
     setSelectedUser(null)
   }
+
+  const handlePass = (id: string) => {
+    setPassedIds(prev => {
+      const next = new Set(prev)
+      next.add(id)
+      localStorage.setItem('he_passed_ids', JSON.stringify([...next]))
+      return next
+    })
+    setSelectedUser(null)
+  }
+
   const [activeMatch, setActiveMatch] = useState<{ match: Match; other: Profile } | null>(null)
   const [activeSeedChat, setActiveSeedChat] = useState<SeedWithAI | null>(null)
   const [editingProfile, setEditingProfile] = useState(false)
@@ -2188,6 +2272,7 @@ export default function App() {
         if (data && data.length > 0) {
           const profiles = data as (Profile & { location?: { lat: number; lng: number } | null })[]
           setNearby(profiles)
+          setNearbyLoading(false)
 
           // Build distance map from GPS data returned by Supabase RPC
           const dm = new Map<string, number>()
@@ -2199,14 +2284,15 @@ export default function App() {
           setNearbyDistances(dm)
         } else {
           setNearby(SEEDS)
+          setNearbyLoading(false)
         }
       })
     }
 
-    if (!navigator.geolocation) { setNearby(SEEDS); return }
+    if (!navigator.geolocation) { setNearby(SEEDS); setNearbyLoading(false); return }
 
     // Initial position
-    navigator.geolocation.getCurrentPosition(handlePosition, () => setNearby(SEEDS), { enableHighAccuracy: true })
+    navigator.geolocation.getCurrentPosition(handlePosition, () => { setNearby(SEEDS); setNearbyLoading(false) }, { enableHighAccuracy: true })
 
     // Watch for movement — re-fetch nearby every position update
     const watchId = navigator.geolocation.watchPosition(handlePosition, () => {}, {
@@ -2240,6 +2326,16 @@ export default function App() {
 
   const handleMovePin = useCallback((pos: { x: number; y: number }) => { setMyPos(pos) }, [])
 
+  const handleShareProfile = async () => {
+    const url = `${window.location.origin}?profile=${user?.id}`
+    if (navigator.share) {
+      await navigator.share({ title: `${myProfile?.name} on Hole Eaters`, url }).catch(() => {})
+    } else {
+      await navigator.clipboard.writeText(url).catch(() => {})
+      showError('Link copied to clipboard')  // repurpose error toast as info
+    }
+  }
+
   const handleProfileSave = async (updated: Partial<Profile>) => {
     if (!user) return
     const merged = { ...myProfile, ...updated, id: user.id } as Profile & { id: string }
@@ -2263,6 +2359,7 @@ export default function App() {
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 480, margin: '0 auto', height: '100vh', background: C.bg, fontFamily: SANS, position: 'relative', overflow: 'hidden' }}>
       <style>{GCSS}</style>
       <a href="#main-content" className="skip-link">Skip to content</a>
+      <OfflineBanner />
 
       {/* Header */}
       <header role="banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0, zIndex: 200 }}>
@@ -2294,7 +2391,8 @@ export default function App() {
         {screen === 'map' && (
           <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} />
         )}
-        {screen === 'list' && (() => {
+        {screen === 'list' && nearbyLoading && <NearbySkeleton />}
+        {screen === 'list' && !nearbyLoading && (() => {
           // Collect all unique tags from visible users
           const allTags = [...new Set(visibleNearby.flatMap(u => u.tags ?? []))].sort()
           const filtered = activeTagFilter
@@ -2390,6 +2488,7 @@ export default function App() {
               <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center' }}>
                 <button onClick={() => setEditingProfile(true)} style={{ padding: '9px 20px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>Edit Profile</button>
                 <button onClick={() => setShowViewed(true)} style={{ padding: '9px 20px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>👁️ Views</button>
+                <button onClick={handleShareProfile} style={{ padding: '9px 20px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>🔗 Share</button>
                 {(!user || user.is_anonymous) && <button onClick={() => setShowAuth(true)} style={{ padding: '9px 20px', borderRadius: 20, background: `${C.purple}22`, border: `1px solid ${C.purple}44`, color: C.purple, fontSize: 13, fontWeight: 700 }}>🔐 Save Account</button>}
               </div>
             </div>
@@ -2496,6 +2595,7 @@ export default function App() {
             }
           }}
           onBlock={handleBlock}
+          onPass={handlePass}
         />
         )
       })()}
