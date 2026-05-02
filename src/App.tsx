@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppNotification } from './lib/push'
-import { supabase, signInAnon, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat } from './lib/supabase'
+import { supabase, signInAnon, signUpEmail, signInEmail, upgradeAnon, logProfileView, getProfileViews, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, GlobalMessage } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
@@ -718,6 +718,13 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
   const [input, setInput] = useState('')
   const [uploading, setUploading] = useState(false)
   const [previewFile, setPreviewFile] = useState<File | null>(null)
+  // Voice note state
+  const [recording, setRecording] = useState(false)
+  const [recordingMs, setRecordingMs] = useState(0)
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -729,25 +736,70 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
+  // Voice recording
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4' })
+      const chunks: BlobPart[] = []
+      mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+      mr.onstop = () => {
+        const blob = new Blob(chunks, { type: mr.mimeType })
+        setAudioBlob(blob)
+        setAudioUrl(URL.createObjectURL(blob))
+        stream.getTracks().forEach(t => t.stop())
+      }
+      mr.start()
+      mediaRecorderRef.current = mr
+      setRecording(true)
+      setRecordingMs(0)
+      recordingTimer.current = setInterval(() => setRecordingMs(ms => ms + 100), 100)
+    } catch { showError('Microphone access denied') }
+  }
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop()
+    setRecording(false)
+    if (recordingTimer.current) clearInterval(recordingTimer.current)
+  }
+
+  const cancelVoice = () => { setAudioBlob(null); setAudioUrl(null); setRecordingMs(0) }
+
+  const sendVoice = async () => {
+    if (!audioBlob) return
+    setUploading(true)
+    const ext = audioBlob.type.includes('webm') ? 'webm' : 'm4a'
+    const file = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: audioBlob.type })
+    const path = `${myId}/voice/${Date.now()}.${ext}`
+    const { url } = await uploadMedia(file, path)
+    if (url) await sendMessage(match.id, myId, '', url, 'audio')
+    cancelVoice(); setUploading(false)
+  }
+
   const send = async () => {
+    if (audioBlob) { await sendVoice(); return }
     if (!input.trim() && !previewFile) return
     if (previewFile) {
       setUploading(true)
       const path = `${myId}/${Date.now()}_${previewFile.name}`
       const { url } = await uploadMedia(previewFile, path)
       if (url) await sendMessage(match.id, myId, input || '', url, previewFile.type.startsWith('video') ? 'video' : 'image')
+      else showError('Upload failed')
       setPreviewFile(null); setUploading(false)
     } else {
-      await sendMessage(match.id, myId, input)
+      const { error } = await sendMessage(match.id, myId, input)
+      if (error) showError('Failed to send message')
     }
     setInput('')
   }
+
+  const fmtMs = (ms: number) => `${Math.floor(ms/60000)}:${String(Math.floor((ms%60000)/1000)).padStart(2,'0')}`
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: C.bg }}>
       <style>{GCSS}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: C.surface, borderBottom: `1px solid ${C.border}` }}>
-        <button onClick={onBack} style={{ color: C.muted, fontSize: 20 }}>←</button>
+        <button aria-label="Go back" onClick={onBack} style={{ color: C.muted, fontSize: 20 }}>←</button>
         <Avatar user={other} size={36} />
         <div>
           <div style={{ fontWeight: 700, fontSize: 15 }}>{other.name}</div>
@@ -760,8 +812,14 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
           const mine = msg.sender_id === myId
           return (
             <div key={msg.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
-              <div style={{ maxWidth: '72%', background: mine ? C.accent : C.surf2, borderRadius: mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding: msg.media_url ? '4px' : '10px 14px', overflow: 'hidden' }}>
-                {msg.media_url && (msg.media_type === 'video' ? <video src={msg.media_url} controls style={{ width: '100%', borderRadius: 12, maxHeight: 220 }} /> : <img src={msg.media_url} style={{ width: '100%', borderRadius: 12, maxHeight: 220, objectFit: 'cover', display: 'block' }} alt="" />)}
+              <div style={{ maxWidth: '72%', background: mine ? C.accent : C.surf2, borderRadius: mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding: msg.media_type === 'audio' ? '10px 14px' : msg.media_url ? '4px' : '10px 14px', overflow: 'hidden', minWidth: msg.media_type === 'audio' ? 180 : undefined }}>
+                {msg.media_type === 'audio' && msg.media_url && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>🎙️</span>
+                    <audio src={msg.media_url} controls style={{ height: 32, flex: 1, accentColor: mine ? '#fff' : C.accent }} />
+                  </div>
+                )}
+                {msg.media_type !== 'audio' && msg.media_url && (msg.media_type === 'video' ? <video src={msg.media_url} controls style={{ width: '100%', borderRadius: 12, maxHeight: 220 }} /> : <img src={msg.media_url} style={{ width: '100%', borderRadius: 12, maxHeight: 220, objectFit: 'cover', display: 'block' }} alt="" />)}
                 {msg.content && <div style={{ padding: msg.media_url ? '8px 10px 6px' : '0', fontSize: 14, lineHeight: 1.45 }}>{msg.content}</div>}
               </div>
             </div>
@@ -769,7 +827,28 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
         })}
         <div ref={bottomRef} />
       </div>
-      {previewFile && (
+
+      {/* Voice recording preview */}
+      {(recording || audioUrl) && (
+        <div style={{ padding: '10px 14px', background: C.surf2, borderTop: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+          {recording ? (
+            <>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', animation: 'pulse 1s infinite' }} />
+              <div style={{ flex: 1, fontSize: 13, fontFamily: FONT, color: '#ef4444' }}>Recording {fmtMs(recordingMs)}</div>
+              <button onClick={stopRecording} style={{ padding: '6px 14px', borderRadius: 8, background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 13 }}>Stop</button>
+            </>
+          ) : audioUrl ? (
+            <>
+              <span style={{ fontSize: 16 }}>🎙️</span>
+              <audio src={audioUrl} controls style={{ height: 32, flex: 1, accentColor: C.accent }} />
+              <button onClick={cancelVoice} style={{ color: C.dim, fontSize: 16 }}>✕</button>
+            </>
+          ) : null}
+        </div>
+      )}
+
+      {/* Media preview */}
+      {previewFile && !recording && !audioUrl && (
         <div style={{ padding: '8px 14px', background: C.surf2, display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 44, height: 44, borderRadius: 8, background: C.surf3, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {previewFile.type.startsWith('image') ? <img src={URL.createObjectURL(previewFile)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : <span style={{ fontSize: 20 }}>🎥</span>}
@@ -778,11 +857,22 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
           <button onClick={() => setPreviewFile(null)} style={{ color: C.dim, fontSize: 16 }}>✕</button>
         </div>
       )}
+
       <div style={{ display: 'flex', gap: 8, padding: '10px 12px', background: C.surface, borderTop: `1px solid ${C.border}` }}>
         <input type="file" accept="image/*,video/*" ref={fileRef} style={{ display: 'none' }} onChange={e => e.target.files?.[0] && setPreviewFile(e.target.files[0])} />
-        <button onClick={() => fileRef.current?.click()} style={{ width: 40, height: 40, borderRadius: 10, background: C.surf2, color: C.muted, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>📎</button>
-        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()} placeholder="Say something..." style={{ flex: 1, background: C.surf2, border: `1px solid ${C.border2}`, borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 14, outline: 'none' }} />
-        <button onClick={send} disabled={uploading} style={{ width: 40, height: 40, borderRadius: 10, background: C.accent, color: '#fff', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: uploading ? 0.5 : 1 }}><span aria-hidden="true">{uploading ? '⏳' : '↑'}</span></button>
+        {!recording && !audioUrl && (
+          <button aria-label="Attach file" onClick={() => fileRef.current?.click()} style={{ width: 40, height: 40, borderRadius: 10, background: C.surf2, color: C.muted, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>📎</button>
+        )}
+        {!recording && !audioUrl && !previewFile && (
+          <button aria-label={recording ? 'Stop recording' : 'Record voice note'} onClick={recording ? stopRecording : startRecording} style={{ width: 40, height: 40, borderRadius: 10, background: recording ? 'rgba(239,68,68,0.2)' : C.surf2, color: recording ? '#ef4444' : C.muted, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🎙️</button>
+        )}
+        {!audioUrl && !recording && (
+          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()} placeholder="Say something..." style={{ flex: 1, background: C.surf2, border: `1px solid ${C.border2}`, borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 14, outline: 'none' }} />
+        )}
+        {audioUrl && <div style={{ flex: 1 }} />}
+        <button onClick={send} disabled={uploading || recording} style={{ width: 40, height: 40, borderRadius: 10, background: (input.trim() || audioUrl || previewFile) && !recording ? C.accent : C.surf3, color: '#fff', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: uploading ? 0.5 : 1 }}>
+          <span aria-hidden="true">{uploading ? '⏳' : '↑'}</span>
+        </button>
       </div>
     </div>
   )
@@ -1196,8 +1286,21 @@ function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boole
       return
     }
 
+    // Server-side rate limit: max 20 global messages per minute per user
+    const oneMinAgo = new Date(Date.now() - 60000).toISOString()
+    const { count } = await supabase
+      .from('global_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('sender_id', userId)
+      .gte('created_at', oneMinAgo)
+    if ((count ?? 0) >= 20) {
+      showError('Slow down — max 20 messages per minute in Whore-izon')
+      setSending(false); setInput(text); return
+    }
+
     const { data, error } = await sendGlobalMessage(userId, text)
-    if (error) { setInput(text) } else if (data) setMessages(prev => prev.some(m => m.id === (data as any).id) ? prev : [...prev, data as GlobalMessage])
+    if (error) { showError('Failed to send'); setInput(text) }
+    else if (data) setMessages(prev => prev.some(m => m.id === (data as any).id) ? prev : [...prev, data as GlobalMessage])
     setSending(false); inputRef.current?.focus()
   }
 
@@ -1461,6 +1564,206 @@ function PushPermissionPrompt({ onDone }: { onDone: () => void }) {
   )
 }
 
+// ─── Global Error Toast ───────────────────────────────────────────────────────
+type ErrToast = { id: string; msg: string }
+const _errListeners = new Set<(msg: string) => void>()
+export function showError(msg: string) { _errListeners.forEach(fn => fn(msg)) }
+
+function ErrorToastContainer() {
+  const [toasts, setToasts] = useState<ErrToast[]>([])
+  useEffect(() => {
+    const fn = (msg: string) => {
+      const id = String(Date.now())
+      setToasts(prev => [...prev.slice(-2), { id, msg }])
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500)
+    }
+    _errListeners.add(fn)
+    return () => { _errListeners.delete(fn) }
+  }, [])
+  if (!toasts.length) return null
+  return (
+    <div style={{ position: 'fixed', top: 60, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 460, padding: '0 12px', zIndex: 1000, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {toasts.map(t => (
+        <div key={t.id} style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 12, padding: '11px 16px', color: '#ef4444', fontSize: 13, fontWeight: 600, animation: 'slideDown 0.2s ease', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span>⚠️</span><span>{t.msg}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Auth Screen (Sign Up / Sign In) ──────────────────────────────────────────
+function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const [success, setSuccess] = useState('')
+
+  const inputStyle: React.CSSProperties = {
+    background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 12,
+    padding: '13px 16px', color: C.text, fontSize: 15, width: '100%', outline: 'none',
+  }
+
+  const submit = async () => {
+    if (!email.trim() || password.length < 6) { setErr('Email + 6+ char password required'); return }
+    setLoading(true); setErr('')
+    if (mode === 'signup') {
+      const { error } = await signUpEmail(email.trim(), password)
+      if (error) { setErr(error.message); setLoading(false); return }
+      setSuccess('Account created! Check your email to confirm, then sign in.')
+      setMode('signin'); setLoading(false); return
+    } else {
+      const { error } = await signInEmail(email.trim(), password)
+      if (error) { setErr(error.message); setLoading(false); return }
+      onSuccess()
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <style>{GCSS}</style>
+      <div style={{ width: '100%', maxWidth: 400 }}>
+        <div style={{ textAlign: 'center', marginBottom: 36 }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🕳️</div>
+          <div style={{ fontWeight: 900, fontSize: 24, letterSpacing: 1 }}>THE HOLE EATERS</div>
+          <div style={{ color: C.dim, fontSize: 13, marginTop: 6 }}>{mode === 'signin' ? 'Sign in to your account' : 'Create your account'}</div>
+        </div>
+
+        {success && <div style={{ background: `${C.green}18`, border: `1px solid ${C.green}44`, borderRadius: 12, padding: '12px 16px', color: C.green, fontSize: 13, marginBottom: 16 }}>{success}</div>}
+        {err && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 12, padding: '12px 16px', color: '#ef4444', fontSize: 13, marginBottom: 16 }}>{err}</div>}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" type="email" autoComplete="email" style={inputStyle} />
+          <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Password (6+ characters)" type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} onKeyDown={e => e.key === 'Enter' && submit()} style={inputStyle} />
+          <button onClick={submit} disabled={loading} style={{ padding: '15px', borderRadius: 14, background: loading ? C.surf3 : C.accent, color: loading ? C.dim : '#fff', fontWeight: 800, fontSize: 16, opacity: loading ? 0.7 : 1, transition: 'all 0.15s', marginTop: 4 }}>
+            {loading ? '...' : mode === 'signin' ? 'Sign In' : 'Create Account'}
+          </button>
+        </div>
+
+        <div style={{ textAlign: 'center', marginTop: 20 }}>
+          <button onClick={() => { setMode(m => m === 'signin' ? 'signup' : 'signin'); setErr(''); setSuccess('') }} style={{ color: C.muted, fontSize: 14 }}>
+            {mode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+          </button>
+        </div>
+
+        <div style={{ textAlign: 'center', marginTop: 12 }}>
+          <button onClick={async () => { setLoading(true); await signInAnon().catch(() => {}); setLoading(false); onSuccess() }} style={{ color: C.dim, fontSize: 12 }}>
+            Continue as guest (session may not persist)
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Account Upgrade Banner ────────────────────────────────────────────────────
+function UpgradeBanner({ isAnon }: { isAnon: boolean }) {
+  const [show, setShow] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [done, setDone] = useState(false)
+
+  useEffect(() => {
+    if (!isAnon) return
+    const dismissed = localStorage.getItem('he_upgrade_dismissed')
+    if (!dismissed) setTimeout(() => setShow(true), 15000)
+  }, [isAnon])
+
+  if (!show || done || !isAnon) return null
+
+  const upgrade = async () => {
+    if (!email.trim() || password.length < 6) return
+    setLoading(true)
+    const { error } = await upgradeAnon(email.trim(), password)
+    if (error) { showError(error.message); setLoading(false); return }
+    setDone(true)
+    localStorage.setItem('he_upgrade_dismissed', '1')
+  }
+
+  return (
+    <div style={{ position: 'fixed', bottom: 76, left: 12, right: 12, zIndex: 400, animation: 'slideUp 0.3s ease' }}>
+      <div style={{ background: C.surf2, border: `1px solid ${C.purple}44`, borderRadius: 16, padding: expanded ? 16 : '12px 16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+        {!expanded ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 18 }}>🔐</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>Save your account</div>
+              <div style={{ fontSize: 11, color: C.dim }}>Guest sessions can expire. Add email to keep your profile.</div>
+            </div>
+            <button onClick={() => setExpanded(true)} style={{ padding: '6px 12px', borderRadius: 8, background: C.purple, color: '#fff', fontWeight: 700, fontSize: 12 }}>Save</button>
+            <button onClick={() => { setShow(false); localStorage.setItem('he_upgrade_dismissed', '1') }} style={{ color: C.dim, fontSize: 16 }}>✕</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>🔐 Save your account</div>
+            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" type="email" style={{ background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 14, outline: 'none' }} />
+            <input value={password} onChange={e => setPassword(e.target.value)} placeholder="Password (6+ chars)" type="password" style={{ background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 14, outline: 'none' }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={upgrade} disabled={loading} style={{ flex: 1, padding: '11px', borderRadius: 10, background: C.purple, color: '#fff', fontWeight: 700, fontSize: 14 }}>{loading ? '...' : 'Save Account'}</button>
+              <button onClick={() => setExpanded(false)} style={{ padding: '11px 14px', borderRadius: 10, background: C.surf3, color: C.dim, fontWeight: 600 }}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Who Viewed Me ─────────────────────────────────────────────────────────────
+function ViewedMeScreen({ userId }: { userId: string }) {
+  const [views, setViews] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    getProfileViews(userId).then(({ data }) => {
+      setViews(data ?? [])
+      setLoading(false)
+    })
+  }, [userId])
+
+  const fmt = (ts: string) => {
+    const d = new Date(ts)
+    const diff = Date.now() - d.getTime()
+    if (diff < 60000) return 'just now'
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
+    return `${Math.floor(diff / 86400000)}d ago`
+  }
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>👁️ Who Viewed You</div>
+      <div style={{ fontSize: 12, color: C.dim, marginBottom: 16 }}>Last 50 profile views</div>
+      {loading && <div style={{ textAlign: 'center', color: C.dim, padding: 40 }}>Loading...</div>}
+      {!loading && views.length === 0 && (
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>👁️</div>
+          <div style={{ color: C.dim, fontSize: 14 }}>No views yet. Move your pin around.</div>
+        </div>
+      )}
+      {views.map((v, i) => {
+        const viewer = v.viewer
+        if (!viewer) return null
+        return (
+          <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.border}`, alignItems: 'center' }}>
+            <Avatar user={viewer} size={44} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{viewer.name}</div>
+              <div style={{ fontSize: 12, color: viewer.color, marginTop: 1 }}>{viewer.role}</div>
+            </div>
+            <div style={{ fontSize: 11, color: C.dim, fontFamily: FONT }}>{fmt(v.viewed_at)}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Profile Editor ───────────────────────────────────────────────────────────
 function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>; onSave: (updated: Partial<Profile>) => Promise<void>; onClose: () => void }) {
   const [form, setForm] = useState({
@@ -1634,6 +1937,8 @@ export default function App() {
   const [activeSeedChat, setActiveSeedChat] = useState<SeedWithAI | null>(null)
   const [editingProfile, setEditingProfile] = useState(false)
   const [showPushPrompt, setShowPushPrompt] = useState(false)
+  const [showAuth, setShowAuth] = useState(false)
+  const [showViewed, setShowViewed] = useState(false)
 
   // Show push permission prompt once after onboarding/profile load
   useEffect(() => {
@@ -1924,6 +2229,7 @@ export default function App() {
 
   if (activeSeedChat) return <SeedChat seed={activeSeedChat} onBack={() => setActiveSeedChat(null)} />
   if (activeMatch) return <ChatScreen match={activeMatch.match} myId={user!.id} other={activeMatch.other} onBack={() => setActiveMatch(null)} />
+  if (showAuth) return <AuthScreen onSuccess={() => setShowAuth(false)} />
   if (!myProfile?.name) return <Onboarding onComplete={handleOnboardingComplete} />
 
   const TAB_H = 60
@@ -2056,9 +2362,11 @@ export default function App() {
                 </div>
               )}
               {myProfile.bio && <div style={{ fontSize: 13, color: C.muted, marginTop: 10, lineHeight: 1.5, maxWidth: 280, margin: '10px auto 0' }}>{myProfile.bio}</div>}
-              <button onClick={() => setEditingProfile(true)} style={{ marginTop: 14, padding: '9px 24px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>
-                Edit Profile
-              </button>
+              <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center' }}>
+                <button onClick={() => setEditingProfile(true)} style={{ padding: '9px 20px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>Edit Profile</button>
+                <button onClick={() => setShowViewed(true)} style={{ padding: '9px 20px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>👁️ Views</button>
+                {(!user || user.is_anonymous) && <button onClick={() => setShowAuth(true)} style={{ padding: '9px 20px', borderRadius: 20, background: `${C.purple}22`, border: `1px solid ${C.purple}44`, color: C.purple, fontSize: 13, fontWeight: 700 }}>🔐 Save Account</button>}
+              </div>
             </div>
 
             <div style={{ padding: '0 16px 32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -2135,7 +2443,12 @@ export default function App() {
       </nav>
 
       {/* Profile drawer */}
-      {selectedUser && (
+      {selectedUser && (() => {
+        // Log view when drawer opens (non-seed profiles only)
+        if (user && !(selectedUser as any).isSeed) {
+          logProfileView(user.id, selectedUser.id).catch(() => {})
+        }
+        return (
         <ProfileDrawer
           user={selectedUser as SeedWithAI | (Profile & { isSeed?: false })}
           myId={user?.id ?? ''}
@@ -2156,7 +2469,8 @@ export default function App() {
           }}
           onBlock={handleBlock}
         />
-      )}
+        )
+      })()}
 
       {/* Profile Editor modal */}
       {editingProfile && myProfile && (
@@ -2172,8 +2486,28 @@ export default function App() {
         <PulseRoomOverlay room={activePulseRoom} myProfile={{ ...myProfile, id: user?.id ?? 'anon' }} onClose={() => setActivePulseRoom(null)} onSend={handlePulseSend} />
       )}
 
+      {/* Error toasts */}
+      <ErrorToastContainer />
+
       {/* In-app notifications */}
       <InAppToastContainer />
+
+      {/* Upgrade banner for anon users */}
+      {user && (user as any).is_anonymous && <UpgradeBanner isAnon={true} />}
+
+      {/* Who viewed me drawer */}
+      {showViewed && user && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 600, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={() => setShowViewed(false)} />
+          <div style={{ position: 'relative', background: C.surf2, borderRadius: '22px 22px 0 0', maxHeight: '85vh', overflow: 'auto', animation: 'slideUp 0.25s ease' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ fontWeight: 800, fontSize: 16 }}>👁️ Who Viewed You</div>
+              <button aria-label="Close" onClick={() => setShowViewed(false)} style={{ color: C.dim, fontSize: 18 }}>✕</button>
+            </div>
+            <ViewedMeScreen userId={user.id} />
+          </div>
+        </div>
+      )}
 
       {/* Push permission prompt */}
       {showPushPrompt && <PushPermissionPrompt onDone={() => setShowPushPrompt(false)} />}

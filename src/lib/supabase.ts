@@ -63,6 +63,38 @@ export async function signOut() {
   return supabase.auth.signOut()
 }
 
+// ─── Email auth ──────────────────────────────────────────────────────────────
+export async function signUpEmail(email: string, password: string) {
+  return supabase.auth.signUp({ email, password })
+}
+
+export async function signInEmail(email: string, password: string) {
+  return supabase.auth.signInWithPassword({ email, password })
+}
+
+// Link anonymous session to email (preserves profile)
+export async function upgradeAnon(email: string, password: string) {
+  return supabase.auth.updateUser({ email, password })
+}
+
+// ─── Profile views ────────────────────────────────────────────────────────────
+export async function logProfileView(viewerId: string, viewedId: string) {
+  if (viewerId === viewedId) return
+  return supabase.from('profile_views').upsert(
+    { viewer_id: viewerId, viewed_id: viewedId, viewed_at: new Date().toISOString() },
+    { onConflict: 'viewer_id,viewed_id', ignoreDuplicates: false }
+  )
+}
+
+export async function getProfileViews(userId: string) {
+  return supabase
+    .from('profile_views')
+    .select('viewer_id, viewed_at, viewer:profiles!profile_views_viewer_id_fkey(id,name,emoji,color,photo_url,role,online)')
+    .eq('viewed_id', userId)
+    .order('viewed_at', { ascending: false })
+    .limit(50)
+}
+
 // ─── Profile helpers ──────────────────────────────────────────────────────────
 export async function upsertProfile(profile: Partial<Profile> & { id: string }) {
   return supabase
