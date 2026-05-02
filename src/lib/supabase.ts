@@ -266,6 +266,39 @@ export async function checkIsAdmin() {
   return supabase.rpc('is_admin')
 }
 
+// ─── Read receipts ───────────────────────────────────────────────────────────
+export async function markMessagesRead(matchId: string, userId: string) {
+  return supabase.from('messages')
+    .update({ read_at: new Date().toISOString() })
+    .eq('match_id', matchId)
+    .neq('sender_id', userId)
+    .is('read_at', null)
+}
+
+export async function getUnreadCounts(userId: string): Promise<Record<string, number>> {
+  const { data } = await supabase
+    .from('messages')
+    .select('match_id')
+    .neq('sender_id', userId)
+    .is('read_at', null)
+    .in('match_id',
+      (await supabase.from('matches')
+        .select('id')
+        .or(`user_a.eq.${userId},user_b.eq.${userId}`)
+      ).data?.map((m: any) => m.id) ?? []
+    )
+  const counts: Record<string, number> = {}
+  data?.forEach((m: any) => { counts[m.match_id] = (counts[m.match_id] ?? 0) + 1 })
+  return counts
+}
+
+// ─── Password reset ───────────────────────────────────────────────────────────
+export async function sendPasswordReset(email: string) {
+  return supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin,
+  })
+}
+
 // ─── Global Chat ──────────────────────────────────────────────────────────────
 export interface GlobalMessage {
   id: string

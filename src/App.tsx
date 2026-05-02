@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppNotification } from './lib/push'
-import { supabase, signInAnon, signUpEmail, signInEmail, upgradeAnon, logProfileView, getProfileViews, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat } from './lib/supabase'
+import { supabase, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, GlobalMessage } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
@@ -730,9 +730,15 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
 
   useEffect(() => {
     getMessages(match.id).then(({ data }) => { if (data) setMessages(data as Message[]) })
-    const sub = subscribeToMessages(match.id, (msg) => setMessages(prev => [...prev, msg]))
+    // Mark messages as read when chat opens
+    markMessagesRead(match.id, myId).catch(() => {})
+    const sub = subscribeToMessages(match.id, (msg) => {
+      setMessages(prev => [...prev, msg])
+      // Mark read immediately if the message is from the other person
+      if (msg.sender_id !== myId) markMessagesRead(match.id, myId).catch(() => {})
+    })
     return () => { supabase.removeChannel(sub) }
-  }, [match.id])
+  }, [match.id, myId])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
@@ -811,7 +817,7 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
         {messages.map(msg => {
           const mine = msg.sender_id === myId
           return (
-            <div key={msg.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+            <div key={msg.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
               <div style={{ maxWidth: '72%', background: mine ? C.accent : C.surf2, borderRadius: mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding: msg.media_type === 'audio' ? '10px 14px' : msg.media_url ? '4px' : '10px 14px', overflow: 'hidden', minWidth: msg.media_type === 'audio' ? 180 : undefined }}>
                 {msg.media_type === 'audio' && msg.media_url && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -822,6 +828,7 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
                 {msg.media_type !== 'audio' && msg.media_url && (msg.media_type === 'video' ? <video src={msg.media_url} controls style={{ width: '100%', borderRadius: 12, maxHeight: 220 }} /> : <img src={msg.media_url} style={{ width: '100%', borderRadius: 12, maxHeight: 220, objectFit: 'cover', display: 'block' }} alt="" />)}
                 {msg.content && <div style={{ padding: msg.media_url ? '8px 10px 6px' : '0', fontSize: 14, lineHeight: 1.45 }}>{msg.content}</div>}
               </div>
+              {mine && <div style={{ fontSize: 10, color: msg.read_at ? C.green : C.dim, marginTop: 2, marginRight: 4 }}>{msg.read_at ? '✓✓ Read' : '✓ Sent'}</div>}
             </div>
           )
         })}
@@ -879,7 +886,7 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
 }
 
 // ─── Matches Screen ───────────────────────────────────────────────────────────
-function MatchesScreen({ userId, onOpenChat }: { userId: string; onOpenChat: (match: Match, other: Profile) => void }) {
+function MatchesScreen({ userId, onOpenChat, onClearUnread }: { userId: string; onOpenChat: (match: Match, other: Profile) => void; onClearUnread: (matchId: string) => void }) {
   const [matches, setMatches] = useState<any[]>([])
   useEffect(() => { getMatches(userId).then(({ data }) => { if (data) setMatches(data) }) }, [userId])
 
@@ -895,8 +902,10 @@ function MatchesScreen({ userId, onOpenChat }: { userId: string; onOpenChat: (ma
         const other = m.user_a === userId ? m.user_b_profile : m.user_a_profile
         if (!other) return null
         return (
-          <div key={m.id} onClick={() => onOpenChat(m, other)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
-            <Avatar user={other} size={48} />
+          <div key={m.id} onClick={() => { onOpenChat(m, other); onClearUnread(m.id) }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
+            <div style={{ position: 'relative' }}>
+              <Avatar user={other} size={48} />
+            </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{other.name}</div>
               <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>Matched {new Date(m.created_at).toLocaleDateString()}</div>
@@ -1643,13 +1652,22 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
           </button>
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: 20 }}>
+        <div style={{ textAlign: 'center', marginTop: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button onClick={() => { setMode(m => m === 'signin' ? 'signup' : 'signin'); setErr(''); setSuccess('') }} style={{ color: C.muted, fontSize: 14 }}>
             {mode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>
-        </div>
-
-        <div style={{ textAlign: 'center', marginTop: 12 }}>
+          {mode === 'signin' && (
+            <button onClick={async () => {
+              if (!email.trim()) { setErr('Enter your email first'); return }
+              setLoading(true)
+              const { error } = await sendPasswordReset(email.trim())
+              setLoading(false)
+              if (error) setErr(error.message)
+              else setSuccess('Password reset email sent — check your inbox')
+            }} style={{ color: C.dim, fontSize: 13 }}>
+              Forgot password?
+            </button>
+          )}
           <button onClick={async () => { setLoading(true); await signInAnon().catch(() => {}); setLoading(false); onSuccess() }} style={{ color: C.dim, fontSize: 12 }}>
             Continue as guest (session may not persist)
           </button>
@@ -1939,6 +1957,8 @@ export default function App() {
   const [showPushPrompt, setShowPushPrompt] = useState(false)
   const [showAuth, setShowAuth] = useState(false)
   const [showViewed, setShowViewed] = useState(false)
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
+  const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0)
 
   // Show push permission prompt once after onboarding/profile load
   useEffect(() => {
@@ -1958,6 +1978,9 @@ export default function App() {
   // Subscribe to Supabase realtime matches + messages and fire notifications
   useEffect(() => {
     if (!user) return
+
+    // Fetch initial unread counts
+    getUnreadCounts(user.id).then(setUnreadCounts)
 
     // New match notification
     const matchSub = supabase.channel(`matches_notify_${user.id}`)
@@ -1989,6 +2012,8 @@ export default function App() {
         const name = data?.name ?? 'Someone'
         const emoji = data?.emoji ?? '💬'
         notify(`${emoji} ${name}`, msg.content?.slice(0, 80) ?? 'Sent you a message', `msg_${msg.match_id}`, '/')
+        // Update unread count
+        setUnreadCounts(prev => ({ ...prev, [msg.match_id]: (prev[msg.match_id] ?? 0) + 1 }))
       })
       .subscribe()
 
@@ -2341,7 +2366,7 @@ export default function App() {
           )
         })()}
         {screen === 'matches' && user && (
-          <MatchesScreen userId={user.id} onOpenChat={(match, other) => setActiveMatch({ match, other })} />
+          <MatchesScreen userId={user.id} onOpenChat={(match, other) => setActiveMatch({ match, other })} onClearUnread={(id) => setUnreadCounts(prev => { const n = {...prev}; delete n[id]; return n })} />
         )}
         {screen === 'global' && (
           <GlobalChat userId={user?.id ?? null} isGhost={isGhost} />
@@ -2432,11 +2457,14 @@ export default function App() {
           { id: 'map', label: 'Map', icon: '📍' },
           { id: 'list', label: 'Nearby', icon: '👥' },
           { id: 'global', label: 'Whore-izon', icon: '🔥' },
-          { id: 'matches', label: 'Matches', icon: '❤️' },
+          { id: 'matches', label: 'Matches', icon: '❤️', badge: totalUnread > 0 ? totalUnread : 0 },
           { id: 'profile', label: 'Me', icon: '👤' },
         ] as { id: Screen; label: string; icon: string }[]).map(tab => (
-          <button key={tab.id} aria-label={tab.label} aria-current={screen === tab.id ? "page" : undefined} onClick={() => setScreen(tab.id)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, color: screen === tab.id ? (isGhost && tab.id === 'global' ? C.ghost : C.accent) : C.dim, background: 'none', transition: 'color 0.15s' }}>
-            <span aria-hidden="true" style={{ fontSize: screen === tab.id ? 21 : 20 }}>{tab.icon}</span>
+          <button key={tab.id} aria-label={tab.label} aria-current={screen === tab.id ? "page" : undefined} onClick={() => setScreen(tab.id)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, color: screen === tab.id ? (isGhost && tab.id === 'global' ? C.ghost : C.accent) : C.dim, background: 'none', transition: 'color 0.15s', position: 'relative' }}>
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <span aria-hidden="true" style={{ fontSize: screen === tab.id ? 21 : 20 }}>{tab.icon}</span>
+              {(tab as any).badge > 0 && <div style={{ position: 'absolute', top: -4, right: -8, background: C.accent, color: '#fff', borderRadius: 10, fontSize: 9, fontWeight: 800, minWidth: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{(tab as any).badge > 99 ? '99+' : (tab as any).badge}</div>}
+            </div>
             <span style={{ fontSize: 9, fontWeight: screen === tab.id ? 700 : 400 }}>{tab.label}</span>
           </button>
         ))}
