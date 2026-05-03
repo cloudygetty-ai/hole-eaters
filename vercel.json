@@ -16,7 +16,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.anthropic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob: https://*.supabase.co; worker-src 'self' blob:; font-src 'self' data:"
+          "value": "default-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.anthropic.com https://events.mapbox.com https://api.mapbox.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://api.mapbox.com; img-src 'self' data: blob: https://*.supabase.co https://*.mapbox.com; media-src 'self' blob: https://*.supabase.co; worker-src 'self' blob:; font-src 'self' data:; manifest-src 'self'"
         },
         {
           "key": "X-Content-Type-Options",
