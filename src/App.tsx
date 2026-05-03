@@ -1067,10 +1067,157 @@ function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => void 
 }
 
 // ─── FEATURE: PULSE ROOM ──────────────────────────────────────────────────────
+
+// ─── WebRTC Video Chat (Pulse Rooms) ─────────────────────────────────────────
+function VideoGrid({ streams }: { streams: { id: string; stream: MediaStream; name: string; emoji: string; color: string }[] }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: streams.length === 1 ? '1fr' : '1fr 1fr', gap: 4, padding: 4, background: '#000', maxHeight: 240, minHeight: 120 }}>
+      {streams.map(({ id, stream, name, emoji, color }) => (
+        <div key={id} style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', background: '#111', aspectRatio: '4/3' }}>
+          <VideoTile stream={stream} />
+          <div style={{ position: 'absolute', bottom: 4, left: 6, fontSize: 10, color: '#fff', background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '2px 6px', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span>{emoji}</span><span style={{ color }}>{name}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function VideoTile({ stream }: { stream: MediaStream }) {
+  const ref = useRef<HTMLVideoElement>(null)
+  useEffect(() => {
+    if (ref.current) { ref.current.srcObject = stream }
+  }, [stream])
+  return <video ref={ref} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+}
+
+function useWebRTC(roomId: string, myProfile: Partial<Profile>, enabled: boolean) {
+  const [streams, setStreams] = useState<{ id: string; stream: MediaStream; name: string; emoji: string; color: string }[]>([])
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+  const [micOn, setMicOn] = useState(true)
+  const [camOn, setCamOn] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const peers = useRef<Map<string, RTCPeerConnection>>(new Map())
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+
+  const myId = myProfile.id ?? 'anon'
+  const myMeta = { name: myProfile.name ?? 'Guest', emoji: myProfile.emoji ?? '🔥', color: myProfile.color ?? '#ff4444' }
+
+  const createPeer = (targetId: string, stream: MediaStream, polite: boolean): RTCPeerConnection => {
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] })
+    stream.getTracks().forEach(t => pc.addTrack(t, stream))
+
+    pc.ontrack = (e) => {
+      const remote = e.streams[0]
+      setStreams(prev => prev.some(s => s.id === targetId) ? prev : [...prev, { id: targetId, stream: remote, name: '...', emoji: '👤', color: '#888' }])
+    }
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        channelRef.current?.send({ type: 'broadcast', event: 'ice', payload: { from: myId, to: targetId, candidate: e.candidate } })
+      }
+    }
+
+    pc.onnegotiationneeded = async () => {
+      if (!polite) return
+      try {
+        const offer = await pc.createOffer()
+        await pc.setLocalDescription(offer)
+        channelRef.current?.send({ type: 'broadcast', event: 'offer', payload: { from: myId, to: targetId, sdp: pc.localDescription, meta: myMeta } })
+      } catch {}
+    }
+
+    peers.current.set(targetId, pc)
+    return pc
+  }
+
+  useEffect(() => {
+    if (!enabled) return
+    let stream: MediaStream
+
+    const init = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 320, height: 240 }, audio: true })
+        setLocalStream(stream)
+        setStreams([{ id: myId, stream, name: myMeta.name, emoji: myMeta.emoji, color: myMeta.color }])
+
+        const channel = supabase.channel(`pulse-video-${roomId}`, { config: { broadcast: { self: false } } })
+        channelRef.current = channel
+
+        channel
+          .on('broadcast', { event: 'join' }, ({ payload }: any) => {
+            if (payload.id === myId) return
+            // They joined — we (polite) send offer
+            const pc = createPeer(payload.id, stream, true)
+            setStreams(prev => prev.some(s => s.id === payload.id) ? prev.map(s => s.id === payload.id ? { ...s, name: payload.meta.name, emoji: payload.meta.emoji, color: payload.meta.color } : s) : prev)
+            pc.onnegotiationneeded?.(new Event('negotiationneeded'))
+          })
+          .on('broadcast', { event: 'offer' }, async ({ payload }: any) => {
+            if (payload.to !== myId) return
+            let pc = peers.current.get(payload.from)
+            if (!pc) pc = createPeer(payload.from, stream, false)
+            setStreams(prev => prev.some(s => s.id === payload.from) ? prev.map(s => s.id === payload.from ? { ...s, name: payload.meta?.name ?? s.name, emoji: payload.meta?.emoji ?? s.emoji, color: payload.meta?.color ?? s.color } : s) : [...prev, { id: payload.from, stream: new MediaStream(), name: payload.meta?.name ?? '...', emoji: payload.meta?.emoji ?? '👤', color: payload.meta?.color ?? '#888' }])
+            await pc.setRemoteDescription(payload.sdp)
+            const answer = await pc.createAnswer()
+            await pc.setLocalDescription(answer)
+            channel.send({ type: 'broadcast', event: 'answer', payload: { from: myId, to: payload.from, sdp: pc.localDescription } })
+          })
+          .on('broadcast', { event: 'answer' }, async ({ payload }: any) => {
+            if (payload.to !== myId) return
+            const pc = peers.current.get(payload.from)
+            if (pc && pc.signalingState !== 'stable') await pc.setRemoteDescription(payload.sdp)
+          })
+          .on('broadcast', { event: 'ice' }, async ({ payload }: any) => {
+            if (payload.to !== myId) return
+            const pc = peers.current.get(payload.from)
+            if (pc) await pc.addIceCandidate(payload.candidate).catch(() => {})
+          })
+          .on('broadcast', { event: 'leave' }, ({ payload }: any) => {
+            peers.current.get(payload.id)?.close()
+            peers.current.delete(payload.id)
+            setStreams(prev => prev.filter(s => s.id !== payload.id))
+          })
+          .subscribe(() => {
+            channel.send({ type: 'broadcast', event: 'join', payload: { id: myId, meta: myMeta } })
+          })
+      } catch (err: any) {
+        setError(err.message ?? 'Camera/mic denied')
+      }
+    }
+
+    init()
+
+    return () => {
+      channelRef.current?.send({ type: 'broadcast', event: 'leave', payload: { id: myId } })
+      channelRef.current?.unsubscribe()
+      peers.current.forEach(pc => pc.close())
+      peers.current.clear()
+      stream?.getTracks().forEach(t => t.stop())
+      setLocalStream(null)
+      setStreams([])
+    }
+  }, [enabled, roomId])
+
+  const toggleMic = () => {
+    localStream?.getAudioTracks().forEach(t => { t.enabled = !t.enabled })
+    setMicOn(p => !p)
+  }
+
+  const toggleCam = () => {
+    localStream?.getVideoTracks().forEach(t => { t.enabled = !t.enabled })
+    setCamOn(p => !p)
+  }
+
+  return { streams, localStream, micOn, camOn, toggleMic, toggleCam, error }
+}
+
 function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoom; myProfile: Partial<Profile>; onClose: () => void; onSend: (text: string) => void }) {
   const [input, setInput] = useState('')
   const [timeLeft, setTimeLeft] = useState(0)
+  const [videoOn, setVideoOn] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const { streams, micOn, camOn, toggleMic, toggleCam, error: videoError } = useWebRTC(room.id, myProfile, videoOn)
 
   useEffect(() => {
     const tick = () => setTimeLeft(Math.max(0, room.expiresAt - Date.now()))
@@ -1115,10 +1262,29 @@ function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoo
               <button onClick={onClose} style={{ color: C.dim, fontSize: 16, marginLeft: 4 }}>✕</button>
             </div>
           </div>
-          <div style={{ fontSize: 11, color: C.dim }}>
-            {room.memberIds.length} in room · auto-deletes when timer ends · location-only
+          <div style={{ fontSize: 11, color: C.dim, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>{room.memberIds.length} in room · {fmt(timeLeft)} left</span>
+            <button onClick={() => setVideoOn(v => !v)} style={{ fontSize: 11, background: videoOn ? C.accent : C.surf3, color: videoOn ? '#fff' : C.dim, border: `1px solid ${videoOn ? C.accent : C.border2}`, borderRadius: 8, padding: '3px 10px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+              {videoOn ? '📹 On' : '📹 Join Video'}
+            </button>
           </div>
         </div>
+
+        {/* Video grid */}
+        {videoOn && (
+          <div style={{ flexShrink: 0 }}>
+            {videoError ? (
+              <div style={{ padding: '12px 16px', background: '#1a0a0a', fontSize: 12, color: '#ef4444', textAlign: 'center' }}>⚠️ {videoError}</div>
+            ) : (
+              <VideoGrid streams={streams} />
+            )}
+            <div style={{ display: 'flex', gap: 8, padding: '8px 14px', background: '#000', justifyContent: 'center' }}>
+              <button onClick={toggleMic} style={{ width: 36, height: 36, borderRadius: '50%', background: micOn ? C.surf3 : '#ef4444', border: 'none', color: '#fff', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{micOn ? '🎙️' : '🔇'}</button>
+              <button onClick={toggleCam} style={{ width: 36, height: 36, borderRadius: '50%', background: camOn ? C.surf3 : '#ef4444', border: 'none', color: '#fff', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{camOn ? '📹' : '🚫'}</button>
+              <button onClick={() => setVideoOn(false)} style={{ width: 36, height: 36, borderRadius: '50%', background: '#ef4444', border: 'none', color: '#fff', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            </div>
+          </div>
+        )}
 
         {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 200 }}>
@@ -1197,12 +1363,14 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   const onlineCount = nearby.filter(u => u.online).length
 
   return (
-    <div style={{ flex: 1, position: 'relative', minHeight: 0 }}><div data-map="1" role="region" aria-label="Cruising map" style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: `radial-gradient(ellipse at center, #0d1a12 0%, ${C.bg} 100%)` }}>
+    <div style={{ flex: 1, position: 'relative', minHeight: 0 }}><div data-map="1" role="region" aria-label="Cruising map" style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: `radial-gradient(ellipse at 50% 60%, #0d2016 0%, #080e0a 55%, ${C.bg} 100%)` }}>
       {/* Grid */}
-      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.04, pointerEvents: 'none' }}>
+      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.14, pointerEvents: 'none' }}>
         <defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#22c55e" strokeWidth="0.5" /></pattern></defs>
         <rect width="100%" height="100%" fill="url(#grid)" />
       </svg>
+      {/* Ambient glow at pin */}
+      <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, width: 280, height: 280, borderRadius: '50%', background: `radial-gradient(circle, ${C.accent}20 0%, transparent 70%)`, transform: 'translate(-50%,-50%)', pointerEvents: 'none', transition: 'left 0.5s, top 0.5s', zIndex: 2 }} />
 
       {/* Ghost overlay */}
       {isGhost && (
