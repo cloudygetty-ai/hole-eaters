@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import mapboxgl from 'mapbox-gl'
+import mapboxgl from "mapbox-gl";
 import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppNotification } from './lib/push'
 import { supabase, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
