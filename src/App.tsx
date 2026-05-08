@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import mapboxgl from 'mapbox-gl'
 import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppNotification } from './lib/push'
 import { supabase, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
@@ -37,6 +38,7 @@ const EMOJIS = ['🔥', '🐷', '🐻', '😈', '💦', '👅', '⛓️', '🌈'
 const COLORS = [C.accent, C.purple, C.orange, '#ec4899', '#06b6d4', '#10b981']
 const CRUISING = ['Hosting now', 'In my car', 'Come find me', 'Down for whatever', 'Just looking']
 const PULSE_TTL = 60 * 60 * 1000 // 60 min
+const IS_PREMIUM = import.meta.env.VITE_IS_PREMIUM === 'true' || window.location.hostname.includes('premium')
 
 // ─── Global CSS ───────────────────────────────────────────────────────────────
 const GCSS = `
@@ -745,6 +747,10 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
   const [input, setInput] = useState('')
   const [uploading, setUploading] = useState(false)
   const [previewFile, setPreviewFile] = useState<File | null>(null)
+  // 1-on-1 video call
+  const [videoCall, setVideoCall] = useState(false)
+  const myProfilePartial: Partial<Profile> = { id: myId }
+  const { streams, micOn, camOn, toggleMic, toggleCam, error: videoError } = useWebRTC(`dm_${match.id}`, myProfilePartial, videoCall)
   // Voice note state
   const [recording, setRecording] = useState(false)
   const [recordingMs, setRecordingMs] = useState(0)
@@ -831,13 +837,40 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: C.bg }}>
       <style>{GCSS}</style>
+      {/* 1-on-1 video overlay */}
+      {videoCall && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 900, background: '#000', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+            {videoError ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#ef4444', fontSize: 14 }}>⚠️ {videoError}</div>
+            ) : (
+              <VideoGrid streams={streams} />
+            )}
+            <div style={{ position: 'absolute', top: 16, left: 0, right: 0, textAlign: 'center' }}>
+              <div style={{ display: 'inline-block', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', borderRadius: 20, padding: '6px 14px', fontSize: 13, fontWeight: 700, color: '#fff' }}>
+                {other.emoji} {other.name}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 16, padding: '20px 0 32px', justifyContent: 'center', background: '#000' }}>
+            <button onClick={toggleMic} style={{ width: 52, height: 52, borderRadius: '50%', background: micOn ? C.surf3 : '#ef4444', border: 'none', color: '#fff', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{micOn ? '🎙️' : '🔇'}</button>
+            <button onClick={toggleCam} style={{ width: 52, height: 52, borderRadius: '50%', background: camOn ? C.surf3 : '#ef4444', border: 'none', color: '#fff', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{camOn ? '📹' : '🚫'}</button>
+            <button onClick={() => setVideoCall(false)} style={{ width: 52, height: 52, borderRadius: '50%', background: '#ef4444', border: 'none', color: '#fff', fontSize: 22, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          </div>
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: C.surface, borderBottom: `1px solid ${C.border}` }}>
         <button aria-label="Go back" onClick={onBack} style={{ color: C.muted, fontSize: 20 }}>←</button>
         <Avatar user={other} size={36} />
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>{other.name}</div>
           <div style={{ fontSize: 11, color: other.online ? C.green : C.dim }}>{other.online ? 'Online' : 'Offline'}</div>
         </div>
+        <button
+          aria-label="Start video call"
+          onClick={() => setVideoCall(v => !v)}
+          style={{ width: 36, height: 36, borderRadius: 10, background: videoCall ? C.accent : C.surf2, border: `1px solid ${videoCall ? C.accent : C.border2}`, color: videoCall ? '#fff' : C.muted, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+        >📹</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {messages.length === 0 && <div style={{ textAlign: 'center', color: C.dim, fontSize: 13, marginTop: 40 }}><div style={{ fontSize: 30, marginBottom: 8 }}>💬</div>Say something. You matched for a reason.</div>}
@@ -1046,7 +1079,30 @@ function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => void 
   const steps = [
     { title: "What do they call you?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Your name or handle" style={inputStyle} /><input value={form.age} onChange={e => setForm(f => ({ ...f, age: e.target.value }))} placeholder="Age (18+)" type="number" style={inputStyle} /></div>), valid: () => form.name.trim().length > 0 && Number(form.age) >= 18 },
     { title: "Your role?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{ROLES.map(r => (<button key={r} onClick={() => setForm(f => ({ ...f, role: r }))} style={{ padding: '14px', borderRadius: 12, background: form.role === r ? `${C.accent}22` : C.surf3, border: `1px solid ${form.role === r ? C.accent : C.border2}`, color: form.role === r ? C.accent : C.text, fontWeight: form.role === r ? 700 : 400, fontSize: 15, textAlign: 'left' }}>{r}</button>))}</div>), valid: () => true },
-    { title: "Pick your vibe", content: (<div><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>{EMOJIS.map(e => (<button key={e} onClick={() => setForm(f => ({ ...f, emoji: e }))} style={{ width: 52, height: 52, fontSize: 28, borderRadius: 12, background: form.emoji === e ? `${C.accent}22` : C.surf3, border: `2px solid ${form.emoji === e ? C.accent : 'transparent'}` }}>{e}</button>))}</div><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{COLORS.map(col => (<button key={col} onClick={() => setForm(f => ({ ...f, color: col }))} style={{ width: 36, height: 36, borderRadius: '50%', background: col, border: `3px solid ${form.color === col ? '#fff' : 'transparent'}` }} />))}</div></div>), valid: () => true },
+    { title: "Your vibe", content: (() => {
+      const VIBES = [
+        { id: 'tonight', label: 'Tonight', sub: "I'm free right now", emoji: '🌙', color: C.purple },
+        { id: 'hookup',  label: 'Hookup',  sub: 'No strings attached', emoji: '🔥', color: C.accent },
+        { id: 'connect', label: 'Connect', sub: 'Something real',       emoji: '⚡', color: C.blue   },
+        { id: 'explore', label: 'Explore', sub: 'Just looking',          emoji: '👁️', color: C.ghost  },
+      ]
+      return (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {VIBES.map(v => {
+            const sel = form.emoji === v.emoji
+            return (
+              <button key={v.id} onClick={() => setForm(f => ({ ...f, emoji: v.emoji, color: v.color }))}
+                style={{ position: 'relative', background: sel ? `${v.color}18` : C.surf3, border: `1.5px solid ${sel ? v.color : C.border2}`, borderRadius: 14, padding: '18px 14px 14px', textAlign: 'left', overflow: 'hidden', transition: 'all 0.15s' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: sel ? v.color : 'transparent', borderRadius: '14px 14px 0 0', transition: 'background 0.15s' }} />
+                <div style={{ fontSize: 22, marginBottom: 8 }}>{v.emoji}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: sel ? v.color : C.text, marginBottom: 3 }}>{v.label}</div>
+                <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.4 }}>{v.sub}</div>
+              </button>
+            )
+          })}
+        </div>
+      )
+    })(), valid: () => true },
     { title: "Add a photo", content: (<MediaUploadStep photoUrl={form.photo_url} videoUrl={form.video_url ?? null} color={form.color} emoji={form.emoji} onPhoto={(url) => setForm(f => ({ ...f, photo_url: url }))} onVideo={(url) => setForm(f => ({ ...f, video_url: url }))} />), valid: () => true },
     { title: "Tell them something", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}><textarea value={form.bio} onChange={e => setForm(f => ({ ...f, bio: e.target.value }))} placeholder="Bio (optional)" rows={3} style={{ ...inputStyle, resize: 'none' }} /><input value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newTag.trim()) { setForm(f => ({ ...f, tags: [...f.tags, newTag.trim()] })); setNewTag('') } }} placeholder="Add tag (Enter)" style={{ ...inputStyle }} /><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{form.tags.map(t => (<span key={t} onClick={() => setForm(f => ({ ...f, tags: f.tags.filter(x => x !== t) }))} style={{ fontSize: 12, color: C.dim, background: C.surf3, padding: '4px 10px', borderRadius: 12, cursor: 'pointer' }}>{t} ✕</span>))}</div></div>), valid: () => true },
   ]
@@ -1067,6 +1123,87 @@ function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => void 
 }
 
 // ─── FEATURE: PULSE ROOM ──────────────────────────────────────────────────────
+
+// ─── Street View Modal ────────────────────────────────────────────────────────
+function StreetViewModal({ lat, lng, onClose }: { lat: number; lng: number; onClose: () => void }) {
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_KEY as string | undefined
+  const embedSrc = apiKey
+    ? `https://www.google.com/maps/embed/v1/streetview?key=${apiKey}&location=${lat},${lng}&heading=0&pitch=0&fov=90`
+    : null
+  const mapsUrl = `https://maps.google.com/maps?q=&layer=c&cbll=${lat},${lng}&cbp=12,0,0,0,0&z=17`
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 200, background: C.bg, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        <button aria-label="Close street view" onClick={onClose} style={{ color: C.muted, fontSize: 20, lineHeight: 1, padding: '4px 8px 4px 0' }}>←</button>
+        <span style={{ fontWeight: 700, fontSize: 15 }}>📷 Street View</span>
+        <a href={mapsUrl} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 'auto', fontSize: 12, color: C.accent, textDecoration: 'none', background: `${C.accent}22`, padding: '5px 10px', borderRadius: 8, border: `1px solid ${C.accent}44` }}>
+          Open in Maps ↗
+        </a>
+      </div>
+      {embedSrc ? (
+        <iframe src={embedSrc} style={{ flex: 1, border: 'none' }} allowFullScreen title="Street View" />
+      ) : (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: 32 }}>
+          <div style={{ fontSize: 48 }}>📷</div>
+          <div style={{ color: C.text, fontWeight: 700, fontSize: 17 }}>Street View</div>
+          <div style={{ color: C.dim, fontSize: 13, textAlign: 'center', lineHeight: 1.6 }}>
+            {lat.toFixed(5)}, {lng.toFixed(5)}
+          </div>
+          <a href={mapsUrl} target="_blank" rel="noopener noreferrer" style={{ background: C.accent, color: '#fff', padding: '12px 24px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+            🗺️ Open Google Street View
+          </a>
+          <div style={{ color: C.dim, fontSize: 11, textAlign: 'center' }}>
+            Set VITE_GOOGLE_MAPS_KEY to embed inline
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Pulse Room Create Modal ──────────────────────────────────────────────────
+function PulseRoomCreateModal({ myProfile, onConfirm, onCancel }: {
+  myProfile: Partial<Profile>
+  onConfirm: (name: string, color: string) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState(`${myProfile.name ?? 'My'}'s Room`)
+  const [color, setColor] = useState(C.accent)
+  const roomColors = [C.accent, C.purple, C.orange, '#06b6d4', '#10b981', '#ec4899']
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 300, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: C.surface, borderRadius: '24px 24px 0 0', padding: '24px 20px 48px', animation: 'slideUp 0.25s ease' }}>
+        <div style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: C.dim, letterSpacing: 1, marginBottom: 20, fontFamily: FONT }}>START A PULSE ROOM</div>
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          maxLength={30}
+          placeholder="Room name…"
+          autoFocus
+          style={{ width: '100%', background: C.surf2, border: `1px solid ${C.border2}`, borderRadius: 12, padding: '12px 14px', color: C.text, fontSize: 15, marginBottom: 16, outline: 'none' }}
+        />
+        <div style={{ fontSize: 12, color: C.dim, marginBottom: 10, fontFamily: FONT }}>Room color</div>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 28 }}>
+          {roomColors.map(c => (
+            <button key={c} onClick={() => setColor(c)} style={{ width: 36, height: 36, borderRadius: '50%', background: c, border: `3px solid ${color === c ? '#fff' : 'transparent'}`, transition: 'border 0.15s', flexShrink: 0 }} />
+          ))}
+        </div>
+        <button
+          onClick={() => name.trim() && onConfirm(name.trim(), color)}
+          disabled={!name.trim()}
+          style={{ width: '100%', background: name.trim() ? `linear-gradient(135deg, ${color}, ${C.purple})` : C.surf3, borderRadius: 14, padding: '14px', color: '#fff', fontWeight: 700, fontSize: 15, marginBottom: 12, opacity: name.trim() ? 1 : 0.5 }}
+        >
+          📡 Start Room
+        </button>
+        <button onClick={onCancel} style={{ width: '100%', background: 'transparent', color: C.dim, padding: '12px', fontSize: 14 }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
 
 // ─── WebRTC Video Chat (Pulse Rooms) ─────────────────────────────────────────
 function VideoGrid({ streams }: { streams: { id: string; stream: MediaStream; name: string; emoji: string; color: string }[] }) {
@@ -1105,7 +1242,19 @@ function useWebRTC(roomId: string, myProfile: Partial<Profile>, enabled: boolean
   const myMeta = { name: myProfile.name ?? 'Guest', emoji: myProfile.emoji ?? '🔥', color: myProfile.color ?? '#ff4444' }
 
   const createPeer = (targetId: string, stream: MediaStream, polite: boolean): RTCPeerConnection => {
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] })
+    const turnUrl = import.meta.env.VITE_TURN_URL as string | undefined
+    const turnUser = import.meta.env.VITE_TURN_USERNAME as string | undefined
+    const turnCred = import.meta.env.VITE_TURN_CREDENTIAL as string | undefined
+    const iceServers: RTCIceServer[] = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      // Free open relay TURN — covers symmetric NATs
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+      ...(turnUrl && turnUser && turnCred ? [{ urls: turnUrl, username: turnUser, credential: turnCred }] : []),
+    ]
+    const pc = new RTCPeerConnection({ iceServers })
     stream.getTracks().forEach(t => pc.addTrack(t, stream))
 
     pc.ontrack = (e) => {
@@ -1333,87 +1482,235 @@ function GhostBanner({ onDisable }: { onDisable: () => void }) {
 }
 
 // ─── Map Screen ───────────────────────────────────────────────────────────────
-function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost, onOpenPulseRoom, pulseRooms, onCreatePulseRoom }: {
+function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost, onOpenPulseRoom, pulseRooms, onCreatePulseRoom, gpsCoords, isPremium }: {
   myProfile: Partial<Profile>; nearby: (Profile & { isSeed?: boolean })[]; myPos: { x: number; y: number };
   onMovePin: (p: { x: number; y: number }) => void; onSelectUser: (u: Profile & { isSeed?: boolean }) => void;
   isGhost: boolean; onOpenPulseRoom: (id: string) => void;
   pulseRooms: PulseRoom[]; onCreatePulseRoom: () => void;
+  gpsCoords: { lat: number; lng: number } | null; isPremium: boolean;
 }) {
-  // Stable positions: seeds use evenly spread grid, real users use ID hash
-  const positions = nearby.map((u, idx) => {
-    if ((u as any).isSeed) {
-      // Seeds spread across the full map — max distance from each other and from center pin
-      const seedSlots = [
-        { x: 12, y: 12 },   // top-left
-        { x: 85, y: 10 },   // top-right
-        { x: 8,  y: 80 },   // bottom-left
-        { x: 88, y: 82 },   // bottom-right
-        { x: 50, y: 8  },   // top-center
-        { x: 90, y: 48 },   // mid-right
-        { x: 6,  y: 50 },   // mid-left
-        { x: 50, y: 90 },   // bottom-center
-      ]
-      return seedSlots[idx % seedSlots.length]
-    }
-    let hash = 0
-    for (let i = 0; i < u.id.length; i++) hash = (hash * 31 + u.id.charCodeAt(i)) & 0xffff
-    return { x: 10 + (hash % 80), y: 10 + ((hash >> 4) % 75) }
-  })
+  const mapContainerRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<mapboxgl.Map | null>(null)
+  const myMarkerRef = useRef<mapboxgl.Marker | null>(null)
+  const nearbyMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map())
+  const pulseMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map())
+  const [mapReady, setMapReady] = useState(false)
+  const [streetMode, setStreetMode] = useState(false)
+  const [showStreetView, setShowStreetView] = useState(false)
 
+  const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
   const onlineCount = nearby.filter(u => u.online).length
+  const baseLat = gpsCoords?.lat ?? 40.7484
+  const baseLng = gpsCoords?.lng ?? -73.9857
+
+  // ── Init Mapbox map ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapContainerRef.current || !MAPBOX_TOKEN || mapRef.current) return
+    mapboxgl.accessToken = MAPBOX_TOKEN
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: 'mapbox://styles/mapbox/dark-v11',
+      center: [baseLng, baseLat],
+      zoom: 15.5,
+      pitch: 45,
+      bearing: -10,
+      antialias: true,
+    })
+    map.on('load', () => {
+      // 3D buildings layer
+      map.addLayer({
+        id: 'add-3d-buildings',
+        source: 'composite',
+        'source-layer': 'building',
+        filter: ['==', 'extrude', 'true'],
+        type: 'fill-extrusion',
+        minzoom: 14,
+        paint: {
+          'fill-extrusion-color': '#1a1a2e',
+          'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 14.05, ['get', 'height']],
+          'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 14, 0, 14.05, ['get', 'min_height']],
+          'fill-extrusion-opacity': 0.8,
+        },
+      })
+      setMapReady(true)
+    })
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-left')
+    mapRef.current = map
+    return () => {
+      nearbyMarkersRef.current.forEach(m => m.remove())
+      pulseMarkersRef.current.forEach(m => m.remove())
+      myMarkerRef.current?.remove()
+      map.remove()
+      mapRef.current = null
+    }
+  }, [MAPBOX_TOKEN])
+
+  // ── Follow GPS ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapRef.current || !gpsCoords) return
+    mapRef.current.easeTo({ center: [gpsCoords.lng, gpsCoords.lat], duration: 2000 })
+  }, [gpsCoords?.lat, gpsCoords?.lng])
+
+  // ── Street view toggle: pitch + zoom ────────────────────────────────────
+  useEffect(() => {
+    if (!mapRef.current || !mapReady) return
+    mapRef.current.easeTo({
+      pitch: streetMode ? 75 : 45,
+      zoom: streetMode ? 18 : 15.5,
+      duration: 800,
+    })
+  }, [streetMode, mapReady])
+
+  // ── My pin marker ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapRef.current || !mapReady) return
+    myMarkerRef.current?.remove()
+    const el = document.createElement('div')
+    el.style.cssText = `width:48px;height:48px;border-radius:50%;background:${isGhost ? 'rgba(100,255,218,0.08)' : `linear-gradient(135deg,${myProfile.color ?? C.accent}88,${myProfile.color ?? C.accent}22)`};border:2.5px solid ${isGhost ? C.ghost : myProfile.color ?? C.accent};display:flex;align-items:center;justify-content:center;font-size:22px;cursor:grab;box-shadow:0 0 16px ${isGhost ? C.ghost : myProfile.color ?? C.accent}44;z-index:100;transition:box-shadow .3s`
+    el.textContent = isGhost ? '👻' : (myProfile.emoji ?? '🔥')
+    el.title = myProfile.name ?? 'You'
+    const marker = new mapboxgl.Marker({ element: el, draggable: false })
+      .setLngLat([baseLng, baseLat])
+      .addTo(mapRef.current)
+    myMarkerRef.current = marker
+    return () => { marker.remove() }
+  }, [gpsCoords?.lat, gpsCoords?.lng, myProfile.emoji, myProfile.color, myProfile.name, isGhost, mapReady])
+
+  // ── Nearby user markers ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapRef.current || !mapReady) return
+    nearbyMarkersRef.current.forEach(m => m.remove())
+    nearbyMarkersRef.current.clear()
+    nearby.forEach((u, idx) => {
+      let lat: number, lng: number
+      const loc = (u as any).location as { lat: number; lng: number } | null
+      if (loc?.lat && loc?.lng) {
+        lat = loc.lat; lng = loc.lng
+      } else if ((u as any).isSeed) {
+        const angle = (idx / SEEDS.length) * Math.PI * 2
+        lat = baseLat + Math.sin(angle) * 0.0022
+        lng = baseLng + Math.cos(angle) * 0.0028
+      } else return
+      const el = document.createElement('div')
+      el.style.cssText = `display:flex;flex-direction:column;align-items:center;cursor:pointer;`
+      const avatar = document.createElement('div')
+      avatar.style.cssText = `width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,${u.color}88,${u.color}22);border:2px solid ${u.color};display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 2px 14px ${u.color}44;transition:transform .15s;`
+      avatar.textContent = u.emoji ?? '🔥'
+      avatar.onmouseenter = () => { avatar.style.transform = 'scale(1.12)' }
+      avatar.onmouseleave = () => { avatar.style.transform = 'scale(1)' }
+      const label = document.createElement('div')
+      label.style.cssText = `font-size:10px;color:#9497aa;margin-top:3px;white-space:nowrap;font-family:'DM Mono',monospace;background:rgba(8,9,13,0.75);padding:2px 7px;border-radius:5px;backdrop-filter:blur(4px);`
+      label.textContent = u.name
+      el.appendChild(avatar); el.appendChild(label)
+      el.addEventListener('click', () => onSelectUser(u))
+      const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
+      nearbyMarkersRef.current.set(u.id, marker)
+    })
+  }, [nearby, gpsCoords?.lat, gpsCoords?.lng, mapReady])
+
+  // ── Pulse Room beacon markers ────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapRef.current || !mapReady) return
+    pulseMarkersRef.current.forEach(m => m.remove())
+    pulseMarkersRef.current.clear()
+    pulseRooms.filter(r => Date.now() < r.expiresAt).forEach((room, i) => {
+      const angle = (i / Math.max(pulseRooms.length, 1)) * Math.PI * 2
+      const lat = baseLat + Math.sin(angle) * 0.0012
+      const lng = baseLng + Math.cos(angle) * 0.0015
+      const el = document.createElement('div')
+      el.style.cssText = `display:flex;flex-direction:column;align-items:center;cursor:pointer;`
+      const beacon = document.createElement('div')
+      beacon.style.cssText = `width:42px;height:42px;border-radius:50%;background:${room.pulseColor}22;border:2px solid ${room.pulseColor};display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 0 18px ${room.pulseColor}55;animation:roomGlow 2s infinite;`
+      beacon.textContent = '📡'
+      const lbl = document.createElement('div')
+      lbl.style.cssText = `font-size:9px;color:${room.pulseColor};margin-top:4px;white-space:nowrap;font-family:'DM Mono',monospace;font-weight:700;background:rgba(8,9,13,0.75);padding:2px 7px;border-radius:5px;`
+      lbl.textContent = room.name
+      const sub = document.createElement('div')
+      sub.style.cssText = `font-size:9px;color:#6b6d7d;margin-top:1px;white-space:nowrap;font-family:'DM Mono',monospace;background:rgba(8,9,13,0.75);padding:1px 6px;border-radius:4px;`
+      sub.textContent = `${room.memberIds.length} inside`
+      el.appendChild(beacon); el.appendChild(lbl); el.appendChild(sub)
+      el.addEventListener('click', () => onOpenPulseRoom(room.id))
+      const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
+      pulseMarkersRef.current.set(room.id, marker)
+    })
+  }, [pulseRooms, gpsCoords?.lat, gpsCoords?.lng, mapReady])
+
+  // ── Fallback: no Mapbox token → CSS canvas map ───────────────────────────
+  if (!MAPBOX_TOKEN) {
+    const positions = nearby.map((u, idx) => {
+      if ((u as any).isSeed) {
+        const seedSlots = [{ x: 12, y: 12 }, { x: 85, y: 10 }, { x: 8, y: 80 }, { x: 88, y: 82 }, { x: 50, y: 8 }, { x: 90, y: 48 }, { x: 6, y: 50 }, { x: 50, y: 90 }]
+        return seedSlots[idx % seedSlots.length]
+      }
+      let hash = 0
+      for (let i = 0; i < u.id.length; i++) hash = (hash * 31 + u.id.charCodeAt(i)) & 0xffff
+      return { x: 10 + (hash % 80), y: 10 + ((hash >> 4) % 75) }
+    })
+    return (
+      <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+        <div data-map="1" role="region" aria-label="Cruising map" style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: `radial-gradient(ellipse at 50% 60%, #0d2016 0%, #080e0a 55%, ${C.bg} 100%)` }}>
+          <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.14, pointerEvents: 'none' }}>
+            <defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#22c55e" strokeWidth="0.5" /></pattern></defs>
+            <rect width="100%" height="100%" fill="url(#grid)" />
+          </svg>
+          <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, width: 280, height: 280, borderRadius: '50%', background: `radial-gradient(circle, ${C.accent}20 0%, transparent 70%)`, transform: 'translate(-50%,-50%)', pointerEvents: 'none', zIndex: 2 }} />
+          {isGhost && <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(100,255,218,0.01) 20px, rgba(100,255,218,0.01) 40px)', pointerEvents: 'none', zIndex: 1 }} />}
+          {nearby.map((u, i) => (
+            <div key={u.id} style={{ position: 'absolute', left: `${positions[i].x}%`, top: `${positions[i].y}%`, transform: 'translate(-50%,-50%)', cursor: 'pointer', zIndex: 10 }} onClick={() => onSelectUser(u)}>
+              <Avatar user={u} size={44} />
+              <div style={{ textAlign: 'center', fontSize: 10, color: C.muted, marginTop: 3, fontFamily: FONT, whiteSpace: 'nowrap' }}>{u.name}</div>
+            </div>
+          ))}
+          {pulseRooms.map((room, i) => {
+            const bx = 20 + (i * 30) % 60; const by = 30 + (i * 20) % 40
+            if (Date.now() > room.expiresAt) return null
+            return (
+              <div key={room.id} style={{ position: 'absolute', left: `${bx}%`, top: `${by}%`, transform: 'translate(-50%,-50%)', zIndex: 20, cursor: 'pointer' }} onClick={() => onOpenPulseRoom(room.id)}>
+                <div style={{ position: 'absolute', width: 40, height: 40, borderRadius: '50%', border: `2px solid ${room.pulseColor}`, left: '50%', top: '50%', transform: 'translate(-50%,-50%)', animation: 'pulseBeacon 2s ease-out infinite' }} />
+                <div style={{ width: 40, height: 40, borderRadius: '50%', background: `${room.pulseColor}22`, border: `2px solid ${room.pulseColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, animation: 'roomGlow 2s infinite' }}>📡</div>
+                <div style={{ textAlign: 'center', fontSize: 9, color: room.pulseColor, marginTop: 4, fontFamily: FONT, fontWeight: 700, whiteSpace: 'nowrap' }}>{room.name}</div>
+              </div>
+            )
+          })}
+          <MyPin profile={myProfile} pos={myPos} onMove={onMovePin} isGhost={isGhost} />
+          <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, transform: 'translate(-50%,-50%)', width: 120, height: 120, borderRadius: '50%', border: `1px solid ${isGhost ? C.ghost + '20' : C.accent + '30'}`, pointerEvents: 'none', zIndex: 5 }} />
+          <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, transform: 'translate(-50%,-50%)', width: 200, height: 200, borderRadius: '50%', border: `1px solid ${isGhost ? C.ghost + '10' : C.accent + '15'}`, pointerEvents: 'none', zIndex: 5 }} />
+          <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', border: `1px solid ${C.border2}`, borderRadius: 20, padding: '5px 12px', fontSize: 11, color: C.green, fontFamily: FONT, zIndex: 30 }}>● {onlineCount} online</div>
+          {!isGhost && <button onClick={onCreatePulseRoom} style={{ position: 'absolute', bottom: 16, right: 14, background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`, border: 'none', borderRadius: 16, padding: '10px 16px', color: '#fff', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, boxShadow: `0 4px 20px ${C.accent}44`, zIndex: 30 }}><span style={{ fontSize: 16 }}>📡</span> Start Pulse Room</button>}
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div style={{ flex: 1, position: 'relative', minHeight: 0 }}><div data-map="1" role="region" aria-label="Cruising map" style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: `radial-gradient(ellipse at 50% 60%, #0d2016 0%, #080e0a 55%, ${C.bg} 100%)` }}>
-      {/* Grid */}
-      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.14, pointerEvents: 'none' }}>
-        <defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#22c55e" strokeWidth="0.5" /></pattern></defs>
-        <rect width="100%" height="100%" fill="url(#grid)" />
-      </svg>
-      {/* Ambient glow at pin */}
-      <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, width: 280, height: 280, borderRadius: '50%', background: `radial-gradient(circle, ${C.accent}20 0%, transparent 70%)`, transform: 'translate(-50%,-50%)', pointerEvents: 'none', transition: 'left 0.5s, top 0.5s', zIndex: 2 }} />
+    <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+      {/* Mapbox container */}
+      <div ref={mapContainerRef} role="region" aria-label="Cruising map" style={{ position: 'absolute', inset: 0 }} />
 
-      {/* Ghost overlay */}
-      {isGhost && (
-        <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(100,255,218,0.01) 20px, rgba(100,255,218,0.01) 40px)', pointerEvents: 'none', zIndex: 1 }} />
-      )}
+      {/* Ghost tint overlay */}
+      {isGhost && <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(100,255,218,0.015) 20px, rgba(100,255,218,0.015) 40px)', pointerEvents: 'none', zIndex: 2 }} />}
 
-      {/* Nearby users — hidden from ghost's map (they still see everyone) */}
-      {nearby.map((u, i) => (
-        <div key={u.id} style={{ position: 'absolute', left: `${positions[i].x}%`, top: `${positions[i].y}%`, transform: 'translate(-50%,-50%)', cursor: 'pointer', zIndex: 10 }} onClick={() => onSelectUser(u)}>
-          <Avatar user={u} size={44} />
-          <div style={{ textAlign: 'center', fontSize: 10, color: C.muted, marginTop: 3, fontFamily: FONT, whiteSpace: 'nowrap' }}>{u.name}</div>
-        </div>
-      ))}
-
-      {/* Pulse Room beacons */}
-      {pulseRooms.map((room, i) => {
-        const bx = 20 + (i * 30) % 60
-        const by = 30 + (i * 20) % 40
-        const isExpired = Date.now() > room.expiresAt
-        if (isExpired) return null
-        return (
-          <div key={room.id} style={{ position: 'absolute', left: `${bx}%`, top: `${by}%`, transform: 'translate(-50%,-50%)', zIndex: 20, cursor: 'pointer' }} onClick={() => onOpenPulseRoom(room.id)}>
-            {/* Ring animations */}
-            <div style={{ position: 'absolute', width: 40, height: 40, borderRadius: '50%', border: `2px solid ${room.pulseColor}`, left: '50%', top: '50%', transform: 'translate(-50%,-50%)', animation: 'pulseBeacon 2s ease-out infinite' }} />
-            <div style={{ position: 'absolute', width: 40, height: 40, borderRadius: '50%', border: `2px solid ${room.pulseColor}`, left: '50%', top: '50%', transform: 'translate(-50%,-50%)', animation: 'pulseBeacon 2s ease-out infinite 0.6s' }} />
-            {/* Core */}
-            <div style={{ width: 40, height: 40, borderRadius: '50%', background: `${room.pulseColor}22`, border: `2px solid ${room.pulseColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, animation: 'roomGlow 2s infinite' }}>📡</div>
-            <div style={{ textAlign: 'center', fontSize: 9, color: room.pulseColor, marginTop: 4, fontFamily: FONT, fontWeight: 700, whiteSpace: 'nowrap' }}>{room.name}</div>
-            <div style={{ textAlign: 'center', fontSize: 9, color: C.dim, marginTop: 1, fontFamily: FONT }}>{room.memberIds.length} in room</div>
-          </div>
-        )
-      })}
-
-      {/* My pin */}
-      <MyPin profile={myProfile} pos={myPos} onMove={onMovePin} isGhost={isGhost} />
-
-      {/* Radar rings */}
-      <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, transform: 'translate(-50%,-50%)', width: 120, height: 120, borderRadius: '50%', border: `1px solid ${isGhost ? C.ghost + '20' : C.accent + '30'}`, pointerEvents: 'none', zIndex: 5 }} />
-      <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, transform: 'translate(-50%,-50%)', width: 200, height: 200, borderRadius: '50%', border: `1px solid ${isGhost ? C.ghost + '10' : C.accent + '15'}`, pointerEvents: 'none', zIndex: 5 }} />
-
-      {/* Online count */}
-      <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', border: `1px solid ${C.border2}`, borderRadius: 20, padding: '5px 12px', fontSize: 11, color: C.green, fontFamily: FONT, zIndex: 30 }}>
+      {/* Top-right: online count */}
+      <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(10px)', border: `1px solid ${C.border2}`, borderRadius: 20, padding: '5px 12px', fontSize: 11, color: C.green, fontFamily: FONT, zIndex: 30 }}>
         ● {onlineCount} online
+      </div>
+
+      {/* Street / 3D view toggle */}
+      <div style={{ position: 'absolute', top: 52, right: 12, display: 'flex', flexDirection: 'column', gap: 6, zIndex: 30 }}>
+        <button
+          onClick={() => setStreetMode(s => !s)}
+          title={streetMode ? 'Overview' : 'Street-level view'}
+          style={{ background: streetMode ? C.accent : 'rgba(0,0,0,0.65)', backdropFilter: 'blur(10px)', border: `1px solid ${streetMode ? C.accent : C.border2}`, borderRadius: 10, padding: '6px 10px', fontSize: 16, color: '#fff', lineHeight: 1 }}
+        >
+          {streetMode ? '🗺️' : '🏙️'}
+        </button>
+        <button
+          onClick={() => isPremium ? setShowStreetView(true) : showError('Street View is a premium feature 🔒')}
+          title="Google Street View"
+          style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(10px)', border: `1px solid ${isPremium ? C.blue : C.border2}`, borderRadius: 10, padding: '6px 10px', fontSize: 16, color: isPremium ? '#fff' : C.dim, lineHeight: 1 }}
+        >
+          📷
+        </button>
       </div>
 
       {/* Create Pulse Room FAB */}
@@ -1422,7 +1719,11 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
           <span style={{ fontSize: 16 }}>📡</span> Start Pulse Room
         </button>
       )}
-    </div>
+
+      {/* Street View modal */}
+      {showStreetView && gpsCoords && (
+        <StreetViewModal lat={gpsCoords.lat} lng={gpsCoords.lng} onClose={() => setShowStreetView(false)} />
+      )}
     </div>
   )
 }
@@ -2579,22 +2880,28 @@ export default function App() {
     return () => clearInterval(id)
   }, [activePulseRoom])
 
+  const [showPulseCreate, setShowPulseCreate] = useState(false)
+
   const handleCreatePulseRoom = () => {
     if (!myProfile?.name) return
-    const roomColors = [C.accent, C.purple, C.orange, '#06b6d4', '#10b981']
+    setShowPulseCreate(true)
+  }
+
+  const handleConfirmCreateRoom = (name: string, color: string) => {
     const newRoom: PulseRoom = {
       id: `room_${Date.now()}`,
-      name: `${myProfile.name}'s Room`,
+      name,
       creatorId: user?.id ?? 'anon',
-      creatorName: myProfile.name ?? 'Anonymous',
+      creatorName: myProfile?.name ?? 'Anonymous',
       memberIds: [user?.id ?? 'anon'],
       messages: [],
       expiresAt: Date.now() + PULSE_TTL,
-      pulseColor: roomColors[Math.floor(Math.random() * roomColors.length)],
+      pulseColor: color,
     }
     const updated = [...pulseRooms, newRoom]
     savePulseRooms(updated)
     setActivePulseRoom(newRoom)
+    setShowPulseCreate(false)
   }
 
   const handleOpenPulseRoom = (id: string) => {
@@ -2800,9 +3107,9 @@ export default function App() {
         <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: 1 }}>THE HOLE EATERS</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Ghost Mode Toggle */}
-          <button aria-label={isGhost ? "Disable Ghost Mode" : "Enable Ghost Mode"} aria-pressed={isGhost} onClick={() => setIsGhost(g => !g)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 20, background: isGhost ? 'rgba(100,255,218,0.1)' : C.surf2, border: `1px solid ${isGhost ? C.ghost + '55' : C.border2}`, fontSize: 11, fontWeight: 700, color: isGhost ? C.ghost : C.dim, transition: 'all 0.2s' }}>
+          <button aria-label={isGhost ? "Disable Ghost Mode" : "Enable Ghost Mode"} aria-pressed={isGhost} onClick={() => IS_PREMIUM ? setIsGhost(g => !g) : showError('Ghost Mode is a premium feature 🔒')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 20, background: isGhost ? 'rgba(100,255,218,0.1)' : C.surf2, border: `1px solid ${isGhost ? C.ghost + '55' : IS_PREMIUM ? C.border2 : C.dim + '33'}`, fontSize: 11, fontWeight: 700, color: isGhost ? C.ghost : IS_PREMIUM ? C.dim : C.dim + '88', transition: 'all 0.2s' }}>
             <span>👻</span>
-            <span>{isGhost ? 'Ghost' : 'Go Ghost'}</span>
+            <span>{isGhost ? 'Ghost' : IS_PREMIUM ? 'Go Ghost' : 'Ghost 🔒'}</span>
           </button>
 
           {cruisingStatus ? (
@@ -2823,7 +3130,7 @@ export default function App() {
       {/* Main */}
       <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {screen === 'map' && (
-          <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} />
+          <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} gpsCoords={gpsCoords} isPremium={IS_PREMIUM} />
         )}
         {screen === 'list' && nearbyLoading && <NearbySkeleton />}
         {screen === 'list' && !nearbyLoading && (() => {
@@ -3073,6 +3380,11 @@ export default function App() {
           onSave={handleProfileSave}
           onClose={() => setEditingProfile(false)}
         />
+      )}
+
+      {/* Pulse Room create modal */}
+      {showPulseCreate && myProfile && (
+        <PulseRoomCreateModal myProfile={myProfile} onConfirm={handleConfirmCreateRoom} onCancel={() => setShowPulseCreate(false)} />
       )}
 
       {/* Pulse Room overlay */}
