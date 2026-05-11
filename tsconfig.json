@@ -1,18 +1,7 @@
 {
   "files": [],
   "references": [
-    {
-      "path": "./tsconfig.app.json"
-    },
-    {
-      "path": "./tsconfig.node.json"
-    }
-  ],
-  {
-  "compilerOptions": {
-    "moduleResolution": "bundler",
-    "skipLibCheck": true,
-    "strict": true,
-    "jsx": "react-jsx"
-  }
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
 }
