@@ -247,7 +247,7 @@ export async function logAdminAction(adminId: string, action: string, targetType
 }
 
 export async function getAdminStats() {
-  return supabase.from('admin_stats').select('*').single()
+  return supabase.rpc('get_admin_stats').single()
 }
 
 export async function getAdminLog() {
@@ -297,6 +297,46 @@ export async function sendPasswordReset(email: string) {
   return supabase.auth.resetPasswordForEmail(email, {
     redirectTo: window.location.origin,
   })
+}
+
+// ─── Vibe Checks ──────────────────────────────────────────────────────────────
+export interface VibeCheck {
+  id: string
+  from_user: string
+  to_user: string
+  score: number
+  summary: string | null
+  created_at: string
+}
+
+export interface VibeSummary {
+  avg_score: number | null
+  check_count: number
+}
+
+export async function submitVibeCheck(fromUser: string, toUser: string, score: number, summary?: string) {
+  return supabase
+    .from('vibe_checks')
+    .upsert(
+      { from_user: fromUser, to_user: toUser, score, summary: summary || null },
+      { onConflict: 'from_user,to_user' }
+    )
+    .select()
+    .single()
+}
+
+export async function getMyVibeCheckFor(fromUser: string, toUser: string) {
+  return supabase
+    .from('vibe_checks')
+    .select('*')
+    .eq('from_user', fromUser)
+    .eq('to_user', toUser)
+    .maybeSingle()
+}
+
+export async function getVibeSummary(targetUser: string): Promise<{ data: VibeSummary | null; error: any }> {
+  const { data, error } = await supabase.rpc('get_vibe_summary', { target_user: targetUser }).single()
+  return { data: data as VibeSummary | null, error }
 }
 
 // ─── Global Chat ──────────────────────────────────────────────────────────────
