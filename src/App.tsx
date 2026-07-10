@@ -1758,7 +1758,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
           <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, transform: 'translate(-50%,-50%)', width: 120, height: 120, borderRadius: '50%', border: `1px solid ${isGhost ? C.ghost + '20' : C.accent + '30'}`, pointerEvents: 'none', zIndex: 5 }} />
           <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, transform: 'translate(-50%,-50%)', width: 200, height: 200, borderRadius: '50%', border: `1px solid ${isGhost ? C.ghost + '10' : C.accent + '15'}`, pointerEvents: 'none', zIndex: 5 }} />
           <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', border: `1px solid ${C.border2}`, borderRadius: 20, padding: '5px 12px', fontSize: 11, color: C.green, fontFamily: FONT, zIndex: 30 }}>● {onlineCount} online</div>
-          {!isGhost && <button onClick={onCreatePulseRoom} style={{ position: 'absolute', bottom: 16, right: 14, background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`, border: 'none', borderRadius: 16, padding: '10px 16px', color: '#fff', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, boxShadow: `0 4px 20px ${C.accent}44`, zIndex: 30 }}><span style={{ fontSize: 16 }}>📡</span> Start Pulse Room</button>}
+          {!isGhost && <button onClick={onCreatePulseRoom} style={{ position: 'absolute', bottom: 'calc(76px + env(safe-area-inset-bottom))', right: 14, background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`, border: 'none', borderRadius: 16, padding: '10px 16px', color: '#fff', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, boxShadow: `0 4px 20px ${C.accent}44`, zIndex: 30 }}><span style={{ fontSize: 16 }}>📡</span> Start Pulse Room</button>}
         </div>
       </div>
     )
@@ -1797,7 +1797,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
 
       {/* Create Pulse Room FAB */}
       {!isGhost && (
-        <button onClick={onCreatePulseRoom} style={{ position: 'absolute', bottom: 16, right: 14, background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`, border: 'none', borderRadius: 16, padding: '10px 16px', color: '#fff', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, boxShadow: `0 4px 20px ${C.accent}44`, zIndex: 30 }}>
+        <button onClick={onCreatePulseRoom} style={{ position: 'absolute', bottom: 'calc(76px + env(safe-area-inset-bottom))', right: 14, background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`, border: 'none', borderRadius: 16, padding: '10px 16px', color: '#fff', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, boxShadow: `0 4px 20px ${C.accent}44`, zIndex: 30 }}>
           <span style={{ fontSize: 16 }}>📡</span> Start Pulse Room
         </button>
       )}
