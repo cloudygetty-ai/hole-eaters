@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 // Server-side proxy for Seed AI chat.
 //
 // PREVIOUSLY: the client called api.anthropic.com directly with
