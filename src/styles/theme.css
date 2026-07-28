@@ -1,0 +1,362 @@
+/* ============================================================
+   HOLE EATERS — "VELVET ROOM"
+   Members-only after-hours. Oxblood leather, brass hardware,
+   candlelight. Mobile-first PWA.
+   ------------------------------------------------------------
+   Import once in main.tsx:  import './styles/theme.css'
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap');
+
+/* ---------- 1. TOKENS ---------- */
+:root {
+  /* surface */
+  --ink:        #090608;
+  --velvet:     #170D12;
+  --velvet-2:   #1F1218;
+  --hairline:   rgba(177, 138, 85, 0.22);
+
+  /* accent */
+  --oxblood:    #4E0D1E;
+  --ember:      #B22B44;
+  --ember-lift: #D94A63;
+  --brass:      #B18A55;
+  --brass-lift: #E0C08A;
+
+  /* type */
+  --ivory:      #EFE6DA;
+  --smoke:      #97867F;
+  --whisper:    rgba(239, 230, 218, 0.42);
+
+  /* families */
+  --display: 'Bodoni Moda', 'Didot', serif;
+  --ui:      'Instrument Sans', system-ui, sans-serif;
+
+  /* scale — 3x jumps, not 1.5x */
+  --t-mark:  clamp(2.75rem, 11vw, 4.25rem);
+  --t-title: clamp(1.5rem, 6vw, 2rem);
+  --t-body:  0.9375rem;
+  --t-micro: 0.6875rem;
+
+  /* geometry */
+  --r-sm: 2px;
+  --r-md: 4px;
+  --r-lg: 10px;
+  --gap:  14px;
+
+  /* motion */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur:  420ms;
+
+  color-scheme: dark;
+}
+
+/* ---------- 2. GROUND ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--ivory);
+  font-family: var(--ui);
+  font-size: var(--t-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
+}
+
+/* Candlelight: two off-center blooms + grain. Fixed, never scrolls. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(78vw 52vh at 12% -8%,  rgba(178, 43, 68, 0.20), transparent 62%),
+    radial-gradient(62vw 44vh at 96% 108%, rgba(177, 138, 85, 0.13), transparent 60%),
+    linear-gradient(180deg, #0C070A 0%, var(--ink) 46%, #0B0709 100%);
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+#root { position: relative; z-index: 2; }
+
+/* ---------- 3. TYPE ROLES ---------- */
+.he-mark {
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: var(--t-mark);
+  line-height: 0.86;
+  letter-spacing: -0.03em;
+  color: var(--ivory);
+}
+.he-mark em {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--brass-lift);
+}
+
+.he-title {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: var(--t-title);
+  letter-spacing: -0.015em;
+  line-height: 1.12;
+  margin: 0;
+}
+
+/* Micro-label: the app's connective tissue. Never sentence case. */
+.he-label {
+  font-family: var(--ui);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+
+/* Data readouts — distance, counts, timestamps */
+.he-data {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: 0.06em;
+  color: var(--smoke);
+}
+
+.he-muted { color: var(--smoke); }
+
+/* ---------- 4. PANEL — leather with brass inset ---------- */
+.he-panel {
+  position: relative;
+  border-radius: var(--r-lg);
+  padding: 18px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.045), transparent 34%),
+    linear-gradient(160deg, var(--velvet-2), var(--velvet) 62%, #120A0E);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    inset 0 0 0 1px rgba(0,0,0,0.55),
+    0 18px 40px -22px rgba(0,0,0,0.95);
+}
+
+/* Brass hairline inset, held 6px off the edge */
+.he-panel::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: calc(var(--r-lg) - 4px);
+  pointer-events: none;
+}
+
+/* Corner ticks — hardware, not filigree */
+.he-panel::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--brass), var(--brass)) 0 0 / 12px 1px no-repeat,
+    linear-gradient(var(--brass), var(--brass)) 0 0 / 1px 12px no-repeat,
+    linear-gradient(var(--brass), var(--brass)) 100% 100% / 12px 1px no-repeat,
+    linear-gradient(var(--brass), var(--brass)) 100% 100% / 1px 12px no-repeat;
+  opacity: 0.75;
+}
+
+.he-panel--flush { padding: 0; overflow: hidden; }
+
+/* ---------- 5. SIGNATURE — proximity ring ---------- */
+/* Engraved brass ring; arc fills by --p (0..1). Ember bloom in range. */
+.he-ring {
+  --p: 0.5;
+  --size: 56px;
+  position: relative;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background:
+    conic-gradient(var(--brass-lift) calc(var(--p) * 360deg), rgba(177,138,85,0.14) 0),
+    var(--velvet);
+  padding: 2px;
+}
+.he-ring > * {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--velvet-2);
+  border: 1px solid rgba(0,0,0,0.6);
+}
+.he-ring[data-range='near'] {
+  box-shadow: 0 0 0 1px rgba(178,43,68,0.45), 0 0 26px -4px var(--ember);
+  animation: he-breathe 3.4s var(--ease) infinite;
+}
+@keyframes he-breathe {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(178,43,68,0.40), 0 0 20px -6px var(--ember); }
+  50%      { box-shadow: 0 0 0 1px rgba(178,43,68,0.70), 0 0 34px -2px var(--ember-lift); }
+}
+
+/* ---------- 6. CONTROLS ---------- */
+.he-btn {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--ui);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 14px 22px;
+  border-radius: var(--r-md);
+  min-height: 46px;
+  color: var(--ivory);
+  background: linear-gradient(180deg, var(--oxblood), #380714);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.14),
+    inset 0 0 0 1px rgba(177,138,85,0.28),
+    0 10px 22px -14px #000;
+  transition: transform 140ms var(--ease), box-shadow 200ms var(--ease);
+}
+.he-btn:active { transform: translateY(1px); }
+.he-btn:hover  { box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), inset 0 0 0 1px var(--brass), 0 12px 26px -14px var(--ember); }
+
+.he-btn--brass {
+  color: #150C10;
+  background: linear-gradient(180deg, var(--brass-lift), var(--brass) 58%, #8E6C3E);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 10px 22px -14px #000;
+}
+
+.he-btn--ghost {
+  background: transparent;
+  color: var(--brass);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+.he-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brass-lift);
+  background: rgba(177,138,85,0.09);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.he-chip--live {
+  color: #FFD9DF;
+  background: rgba(178,43,68,0.16);
+  box-shadow: inset 0 0 0 1px rgba(178,43,68,0.45);
+}
+.he-chip--live::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--ember-lift);
+  box-shadow: 0 0 8px var(--ember-lift);
+}
+
+/* ---------- 7. NAV RAIL ---------- */
+.he-rail {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-around;
+  padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(12,7,10,0.72), rgba(9,6,8,0.97));
+  backdrop-filter: blur(22px) saturate(1.3);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  border-top: 1px solid var(--hairline);
+}
+.he-rail__item {
+  flex: 1;
+  display: grid;
+  gap: 5px;
+  place-items: center;
+  padding: 6px 0;
+  background: none;
+  border: 0;
+  color: var(--whisper);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 200ms var(--ease);
+}
+.he-rail__item[aria-current='page'] { color: var(--brass-lift); }
+.he-rail__item[aria-current='page']::after {
+  content: '';
+  width: 16px; height: 1px;
+  background: var(--brass-lift);
+  box-shadow: 0 0 10px var(--brass-lift);
+}
+
+/* ---------- 8. SHEET ---------- */
+.he-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: radial-gradient(60vw 40vh at 50% 100%, rgba(78,13,30,0.34), rgba(4,2,3,0.86));
+  backdrop-filter: blur(3px);
+  animation: he-fade var(--dur) var(--ease);
+}
+.he-sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 51;
+  max-height: 88dvh;
+  overflow-y: auto;
+  padding: 22px 18px calc(26px + env(safe-area-inset-bottom));
+  border-radius: 18px 18px 0 0;
+  background: linear-gradient(180deg, var(--velvet-2), #100A0D 70%);
+  border-top: 1px solid var(--hairline);
+  box-shadow: 0 -30px 70px -30px #000;
+  animation: he-rise var(--dur) var(--ease);
+}
+.he-sheet__grip {
+  width: 36px; height: 3px;
+  margin: 0 auto 18px;
+  border-radius: 2px;
+  background: var(--brass);
+  opacity: 0.55;
+}
+@keyframes he-fade { from { opacity: 0 } }
+@keyframes he-rise { from { transform: translateY(14%); opacity: 0 } }
+
+/* ---------- 9. FLOOR ---------- */
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid var(--brass-lift);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+::-webkit-scrollbar { width: 0; height: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
