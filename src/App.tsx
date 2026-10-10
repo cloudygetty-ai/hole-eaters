@@ -1578,6 +1578,8 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   const nearbyMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map())
   const pulseMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map())
   const [mapReady, setMapReady] = useState(false)
+  // Bumped when iOS drops the WebGL context, forcing a clean map rebuild
+  const [mapEpoch, setMapEpoch] = useState(0)
   const [streetMode, setStreetMode] = useState(false)
   const [showStreetView, setShowStreetView] = useState(false)
 
@@ -1597,8 +1599,15 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       zoom: 15.5,
       pitch: 45,
       bearing: -10,
-      antialias: true,
+      // iOS Safari evicts heavy WebGL contexts; keep the GPU footprint small
+      antialias: false,
     })
+    map.on('webglcontextlost', () => {
+      console.warn('[map] WebGL context lost, rebuilding')
+      setMapReady(false)
+      setMapEpoch(e => e + 1)
+    })
+    map.on('error', (e) => console.warn('[map]', e.error?.message ?? e))
     map.on('load', () => {
       // 3D buildings layer
       map.addLayer({
@@ -1623,10 +1632,12 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       nearbyMarkersRef.current.forEach(m => m.remove())
       pulseMarkersRef.current.forEach(m => m.remove())
       myMarkerRef.current?.remove()
+      nearbyMarkersRef.current.clear()
+      pulseMarkersRef.current.clear()
       map.remove()
       mapRef.current = null
     }
-  }, [MAPBOX_TOKEN])
+  }, [MAPBOX_TOKEN, mapEpoch])
 
   // ── Follow GPS ───────────────────────────────────────────────────────────
   useEffect(() => {
