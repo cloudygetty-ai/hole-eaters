@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppNotification } from './lib/push'
@@ -2852,8 +2852,6 @@ export default function App() {
   const [myProfile, setMyProfile] = useState<Partial<Profile> | null>(null)
   const [nearby, setNearby] = useState<(Profile & { isSeed?: boolean })[]>(SEEDS)
   const [nearbyLoading, setNearbyLoading] = useState(true)
-  // Derived: seeds always visible, real users filtered by blocklist
-  const visibleNearby = nearby.filter(u => (u as any).isSeed || (!blockedIds.has(u.id) && !passedIds.has(u.id)))
   const [myPos, setMyPos] = useState({ x: 50, y: 50 })
   const [screen, setScreen] = useState<Screen>('map')
   const [selectedUser, setSelectedUser] = useState<(Profile & { isSeed?: boolean }) | null>(null)
@@ -2864,6 +2862,13 @@ export default function App() {
   const [blockedIds, setBlockedIds] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem('he_blocked_ids') ?? '[]')) } catch { return new Set() }
   })
+  // Derived: seeds always visible, real users filtered by blocklist.
+  // Must sit below passedIds/blockedIds (reading them earlier crashed the app
+  // as soon as real users loaded); memoized so map pins aren't rebuilt per render.
+  const visibleNearby = useMemo(
+    () => nearby.filter(u => (u as any).isSeed || (!blockedIds.has(u.id) && !passedIds.has(u.id))),
+    [nearby, blockedIds, passedIds],
+  )
 
   const handleBlock = (id: string) => {
     setBlockedIds(prev => {
