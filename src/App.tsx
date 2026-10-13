@@ -1587,6 +1587,15 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   const onlineCount = nearby.filter(u => u.online).length
   const baseLat = gpsCoords?.lat ?? 40.7484
   const baseLng = gpsCoords?.lng ?? -73.9857
+  // First GPS fix anchors seed/pulse pins so GPS jitter doesn't shuffle them
+  const anchorRef = useRef<{ lat: number; lng: number } | null>(null)
+  if (gpsCoords && !anchorRef.current) anchorRef.current = gpsCoords
+  const anchorLat = anchorRef.current?.lat ?? baseLat
+  const anchorLng = anchorRef.current?.lng ?? baseLng
+  // Follow the user's position until they pan/zoom themselves
+  const followRef = useRef(true)
+  const hasCenteredRef = useRef(false)
+  const [following, setFollowing] = useState(true)
 
   // ── Init Mapbox map ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -1627,6 +1636,15 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       setMapReady(true)
     })
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-left')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stopFollowing = (e: any) => {
+      if (e.originalEvent) { followRef.current = false; setFollowing(false) }
+    }
+    map.on('dragstart', stopFollowing)
+    map.on('zoomstart', stopFollowing)
+    map.on('rotatestart', stopFollowing)
+    map.on('pitchstart', stopFollowing)
+    hasCenteredRef.current = false
     mapRef.current = map
     return () => {
       nearbyMarkersRef.current.forEach(m => m.remove())
@@ -1641,9 +1659,23 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
 
   // ── Follow GPS ───────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapRef.current || !gpsCoords) return
-    mapRef.current.easeTo({ center: [gpsCoords.lng, gpsCoords.lat], duration: 2000 })
-  }, [gpsCoords?.lat, gpsCoords?.lng])
+    if (!mapRef.current || !mapReady || !gpsCoords) return
+    if (!hasCenteredRef.current) {
+      hasCenteredRef.current = true
+      mapRef.current.jumpTo({ center: [gpsCoords.lng, gpsCoords.lat] })
+      return
+    }
+    if (!followRef.current) return
+    mapRef.current.easeTo({ center: [gpsCoords.lng, gpsCoords.lat], duration: 1000 })
+  }, [gpsCoords?.lat, gpsCoords?.lng, mapReady])
+
+  const recenter = () => {
+    followRef.current = true
+    setFollowing(true)
+    if (mapRef.current) {
+      mapRef.current.easeTo({ center: [baseLng, baseLat], zoom: streetMode ? 18 : 15.5, duration: 800 })
+    }
+  }
 
   // ── Street view toggle: pitch + zoom ────────────────────────────────────
   useEffect(() => {
@@ -1667,8 +1699,13 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       .setLngLat([baseLng, baseLat])
       .addTo(mapRef.current)
     myMarkerRef.current = marker
-    return () => { marker.remove() }
-  }, [gpsCoords?.lat, gpsCoords?.lng, myProfile.emoji, myProfile.color, myProfile.name, isGhost, mapReady])
+    return () => { marker.remove(); myMarkerRef.current = null }
+  }, [myProfile.emoji, myProfile.color, myProfile.name, isGhost, mapReady])
+
+  // Move (don't rebuild) my pin as GPS updates
+  useEffect(() => {
+    myMarkerRef.current?.setLngLat([baseLng, baseLat])
+  }, [baseLat, baseLng])
 
   // ── Nearby user markers ──────────────────────────────────────────────────
   useEffect(() => {
@@ -1682,8 +1719,8 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
         lat = loc.lat; lng = loc.lng
       } else if ((u as any).isSeed) {
         const angle = (idx / SEEDS.length) * Math.PI * 2
-        lat = baseLat + Math.sin(angle) * 0.0022
-        lng = baseLng + Math.cos(angle) * 0.0028
+        lat = anchorLat + Math.sin(angle) * 0.0022
+        lng = anchorLng + Math.cos(angle) * 0.0028
       } else return
       const el = document.createElement('div')
       el.style.cssText = `display:flex;flex-direction:column;align-items:center;cursor:pointer;`
@@ -1700,7 +1737,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
       nearbyMarkersRef.current.set(u.id, marker)
     })
-  }, [nearby, gpsCoords?.lat, gpsCoords?.lng, mapReady])
+  }, [nearby, anchorLat, anchorLng, mapReady])
 
   // ── Pulse Room beacon markers ────────────────────────────────────────────
   useEffect(() => {
@@ -1709,8 +1746,8 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
     pulseMarkersRef.current.clear()
     pulseRooms.filter(r => Date.now() < r.expiresAt).forEach((room, i) => {
       const angle = (i / Math.max(pulseRooms.length, 1)) * Math.PI * 2
-      const lat = baseLat + Math.sin(angle) * 0.0012
-      const lng = baseLng + Math.cos(angle) * 0.0015
+      const lat = anchorLat + Math.sin(angle) * 0.0012
+      const lng = anchorLng + Math.cos(angle) * 0.0015
       const el = document.createElement('div')
       el.style.cssText = `display:flex;flex-direction:column;align-items:center;cursor:pointer;`
       const beacon = document.createElement('div')
@@ -1727,7 +1764,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
       pulseMarkersRef.current.set(room.id, marker)
     })
-  }, [pulseRooms, gpsCoords?.lat, gpsCoords?.lng, mapReady])
+  }, [pulseRooms, anchorLat, anchorLng, mapReady])
 
   // ── Fallback: no Mapbox token → CSS canvas map ───────────────────────────
   if (!MAPBOX_TOKEN) {
@@ -1805,6 +1842,16 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
         >
           📷
         </button>
+        {!following && (
+          <button
+            onClick={recenter}
+            title="Center on me"
+            aria-label="Center on me"
+            style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(10px)', border: `1px solid ${C.border2}`, borderRadius: 10, padding: '6px 10px', fontSize: 16, color: '#fff', lineHeight: 1 }}
+          >
+            🎯
+          </button>
+        )}
       </div>
 
       {/* Create Pulse Room FAB */}
@@ -3095,9 +3142,19 @@ export default function App() {
       return `${(m / 1609.34).toFixed(1)}mi`
     }
 
+    let lastFix: { lat: number; lng: number } | null = null
+    let lastSync = { lat: 0, lng: 0, t: 0 }
     const handlePosition = (pos: GeolocationPosition) => {
       const { latitude: lat, longitude: lng } = pos.coords
+      // Phone GPS wanders a few meters while standing still; ignore tiny moves
+      if (lastFix && haversine(lastFix.lat, lastFix.lng, lat, lng) < 15) return
+      lastFix = { lat, lng }
       setGpsCoords({ lat, lng })
+
+      // Sync + refetch at most every 20s unless the user moved 100m+
+      const now = Date.now()
+      if (lastSync.t && now - lastSync.t < 20000 && haversine(lastSync.lat, lastSync.lng, lat, lng) < 100) return
+      lastSync = { lat, lng, t: now }
 
       // Sync to Supabase (best-effort, don't block UI)
       updateLocation(user.id, lat, lng).catch(() => {})
