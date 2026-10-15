@@ -1152,6 +1152,20 @@ function MediaUploadStep({ photoUrl, videoUrl, color, emoji, onPhoto, onVideo }:
 
 
 
+// ─── Nearby fetch ─────────────────────────────────────────────────────────────
+type NearbyProfile = Profile & { distance_meters?: number }
+// Widen the search until someone real shows up, so sparse areas don't fall straight to seed profiles.
+const NEARBY_RADII_M = [5_000, 25_000, 80_000]
+async function fetchNearbyWidening(lat: number, lng: number, selfId: string): Promise<NearbyProfile[]> {
+  for (const radius of NEARBY_RADII_M) {
+    const { data, error } = await getNearbyUsers(lat, lng, radius)
+    if (error) { console.error('[nearby] fetch failed', error); return [] }
+    const others = ((data ?? []) as NearbyProfile[]).filter(p => p.id !== selfId)
+    if (others.length > 0) return others
+  }
+  return []
+}
+
 // ─── Splash ───────────────────────────────────────────────────────────────────
 // Shown while the session and profile resolve, so returning users never see onboarding flash.
 const SPLASH_CSS = `
@@ -3231,18 +3245,14 @@ export default function App() {
       updateLocation(user.id, lat, lng).catch(() => {})
 
       // Fetch nearby + compute distances
-      getNearbyUsers(lat, lng).then(({ data }) => {
-        if (data && data.length > 0) {
-          const profiles = data as (Profile & { location?: { lat: number; lng: number } | null })[]
+      fetchNearbyWidening(lat, lng, user.id).then(profiles => {
+        if (profiles.length > 0) {
           setNearby(profiles)
           setNearbyLoading(false)
-
-          // Build distance map from GPS data returned by Supabase RPC
           const dm = new Map<string, number>()
           profiles.forEach(p => {
-            if (p.location?.lat && p.location?.lng) {
-              dm.set(p.id, haversine(lat, lng, p.location.lat, p.location.lng))
-            }
+            if (typeof p.distance_meters === 'number') dm.set(p.id, p.distance_meters)
+            else if (p.location?.lat && p.location?.lng) dm.set(p.id, haversine(lat, lng, p.location.lat, p.location.lng))
           })
           setNearbyDistances(dm)
         } else {
@@ -3586,7 +3596,11 @@ export default function App() {
           onClose={() => setSelectedUser(null)}
           onLike={() => {
             if (!user || (selectedUser as any).isSeed) return
-            likeUser(user.id, selectedUser.id)
+            likeUser(user.id, selectedUser.id).then(({ error }) => {
+              // 23505 = already liked; treat as success
+              if (error && error.code !== '23505') { console.error('[like] failed', error); showError("Like didn't send. Try again."); return }
+              showError(`🔥 You liked ${selectedUser.name}`)  // error toast doubles as info toast app-wide
+            })
             if (isGhost) setIsGhost(false)
           }}
           onMessage={() => {
