@@ -5,6 +5,8 @@ import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppN
 import { supabase, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, submitVibeCheck, getMyVibeCheckFor, getVibeSummary } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage, VibeSummary } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
+import { ProfileDetailsFields, ProfileDetailsView, type DetailsTheme } from './components/ProfileDetails'
+import type { ProfileDetails } from './lib/profileDetails'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -14,6 +16,7 @@ const C = {
   accent: '#ff4d6d', green: '#22c55e', blue: '#4d79ff', amber: '#eab308',
   purple: '#a855f7', orange: '#f97316', ghost: '#64ffda', pulse: '#ff4d6d',
 }
+const DT: DetailsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim }
 const FONT = "'DM Mono', 'Fira Code', monospace"
 const APP_VERSION = '1.0.0'
 const CHANGELOG: { v: string; date: string; items: string[] }[] = [
@@ -718,6 +721,7 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onBlock, onPass
                   {user.tags.map(tag => <span key={tag} style={{ fontSize: 11, color: C.dim, background: C.surf3, padding: '3px 9px', borderRadius: 12, fontFamily: FONT }}>{tag}</span>)}
                 </div>
               )}
+              <ProfileDetailsView details={(user as Profile).details} theme={DT} />
             </div>
           )}
           {tab === 'vibe' && (
@@ -1204,13 +1208,17 @@ function Onboarding({ onComplete, onSignIn }: { onComplete: (p: Partial<Profile>
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saveErr, setSaveErr] = useState('')
-  const [form, setForm] = useState({ name: '', age: '', role: 'Versatile', bio: '', emoji: '🔥', color: C.accent, tags: [] as string[], photo_url: null as string | null, video_url: null as string | null })
+  const [form, setForm] = useState({ name: '', age: '', role: 'Versatile', bio: '', emoji: '🔥', color: C.accent, tags: [] as string[], photo_url: null as string | null, video_url: null as string | null, details: {} as ProfileDetails })
+  const setDetails = (details: ProfileDetails) => setForm(f => ({ ...f, details }))
   const [newTag, setNewTag] = useState('')
   const inputStyle: React.CSSProperties = { background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 12, padding: '13px 16px', color: C.text, fontSize: 15, width: '100%', outline: 'none' }
 
   const steps = [
     { title: "What do they call you?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Your name or handle" style={inputStyle} /><input value={form.age} onChange={e => setForm(f => ({ ...f, age: e.target.value }))} placeholder="Age (18+)" type="number" style={inputStyle} /></div>), valid: () => form.name.trim().length > 0 && Number(form.age) >= 18 },
     { title: "Your role?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{ROLES.map(r => (<button key={r} onClick={() => setForm(f => ({ ...f, role: r }))} style={{ padding: '14px', borderRadius: 12, background: form.role === r ? `${C.accent}22` : C.surf3, border: `1px solid ${form.role === r ? C.accent : C.border2}`, color: form.role === r ? C.accent : C.text, fontWeight: form.role === r ? 700 : 400, fontSize: 15, textAlign: 'left' }}>{r}</button>))}</div>), valid: () => true },
+    { title: "Your stats", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['stats']} theme={DT} />), valid: () => true },
+    { title: "What you're into", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['interests']} theme={DT} />), valid: () => true },
+    { title: "Sexual health", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['health']} theme={DT} />), valid: () => true },
     { title: "Your vibe", content: (() => {
       const VIBES = [
         { id: 'tonight', label: 'Tonight', sub: "I'm free right now", emoji: '🌙', color: C.purple },
@@ -2783,6 +2791,7 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
     tags: profile.tags ?? [] as string[],
     photo_url: profile.photo_url ?? null as string | null,
     video_url: profile.video_url ?? null as string | null,
+    details: (profile.details ?? {}) as ProfileDetails,
   })
   const [newTag, setNewTag] = useState('')
   const [saving, setSaving] = useState(false)
@@ -2806,6 +2815,7 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
       tags: form.tags,
       photo_url: form.photo_url,
       video_url: form.video_url,
+      details: form.details,
     })
     setSaving(false)
     setSaved(true)
@@ -2849,6 +2859,9 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
               ))}
             </div>
           </div>
+
+          {/* Stats, interests, sexual health */}
+          <ProfileDetailsFields value={form.details} onChange={details => setForm(f => ({ ...f, details }))} sections={['stats', 'interests', 'health']} theme={DT} />
 
           {/* Emoji + Color */}
           <div>
@@ -3310,6 +3323,7 @@ export default function App() {
       tags: profileData.tags ?? [],
       photo_url: profileData.photo_url ?? null,
       video_url: profileData.video_url ?? null,
+      details: profileData.details ?? {},
       // nearby_users hides is_anon profiles; guest accounts must stay visible on the map
       is_anon: false,
       online: true,
@@ -3492,6 +3506,7 @@ export default function App() {
                 </div>
               )}
               {myProfile.bio && <div style={{ fontSize: 13, color: C.muted, marginTop: 10, lineHeight: 1.5, maxWidth: 280, margin: '10px auto 0' }}>{myProfile.bio}</div>}
+              <div style={{ textAlign: 'left', maxWidth: 360, margin: '0 auto' }}><ProfileDetailsView details={myProfile.details} theme={DT} /></div>
               <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center' }}>
                 <button onClick={() => setEditingProfile(true)} style={{ padding: '9px 20px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>Edit Profile</button>
                 <button onClick={() => setShowViewed(true)} style={{ padding: '9px 20px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>👁️ Views</button>

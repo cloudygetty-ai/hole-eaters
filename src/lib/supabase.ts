@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import type { ProfileDetails } from './profileDetails'
 
 export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
 export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -25,6 +26,7 @@ export interface Profile {
   online: boolean
   last_seen: string
   location?: { lat: number; lng: number } | null
+  details?: ProfileDetails
 }
 
 export interface Match {
