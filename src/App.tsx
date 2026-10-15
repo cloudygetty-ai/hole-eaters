@@ -1152,6 +1152,39 @@ function MediaUploadStep({ photoUrl, videoUrl, color, emoji, onPhoto, onVideo }:
 
 
 
+// ─── Splash ───────────────────────────────────────────────────────────────────
+// Shown while the session and profile resolve, so returning users never see onboarding flash.
+const SPLASH_CSS = `
+@keyframes he-logo-in { from { opacity: 0; transform: scale(0.92) } to { opacity: 1; transform: scale(1) } }
+@keyframes he-glow { 0%,100% { opacity: 0.35; transform: scale(0.95) } 50% { opacity: 0.7; transform: scale(1.05) } }
+@keyframes he-drip { 0% { transform: scaleY(0); opacity: 0 } 25% { opacity: 1 } 100% { transform: scaleY(1); opacity: 1 } }
+@keyframes he-fade { from { opacity: 0; letter-spacing: 0.9em } to { opacity: 0.55; letter-spacing: 0.6em } }
+@media (prefers-reduced-motion: reduce) { .he-splash * { animation: none !important; opacity: 1 !important } }
+`
+const DRIPS = [{ x: 18, h: 44 }, { x: 34, h: 26 }, { x: 50, h: 38 }, { x: 66, h: 52 }, { x: 82, h: 22 }]
+
+function Splash() {
+  return (
+    <div className="he-splash" role="status" aria-label="Loading The Hole Eaters" style={{ position: 'fixed', inset: 0, background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+      <style>{SPLASH_CSS}</style>
+      <div style={{ position: 'relative', width: 240 }}>
+        {/* Glow sits behind the image: a filter on the image itself would outline its black square */}
+        <div aria-hidden style={{ position: 'absolute', inset: '-20%', background: 'radial-gradient(closest-side, rgba(255,77,109,0.22), transparent)', animation: 'he-glow 2.4s ease-in-out infinite' }} />
+        <img src="/brand/logo.webp" alt="" width={240} style={{ position: 'relative', display: 'block', height: 'auto', mixBlendMode: 'lighten', animation: 'he-logo-in 0.6s cubic-bezier(.2,.8,.2,1) both' }} />
+      </div>
+      <div aria-hidden style={{ position: 'relative', width: 200, height: 64, marginTop: 6 }}>
+        {DRIPS.map((d, i) => (
+          <div key={i} style={{ position: 'absolute', left: `${d.x}%`, top: 0, width: 8, marginLeft: -4, height: d.h, transformOrigin: 'top', animation: `he-drip 0.8s ease-in ${0.3 + i * 0.1}s both` }}>
+            <div style={{ width: 8, height: '100%', borderRadius: 4, background: 'linear-gradient(#f1e8d6, #e4d7bd)' }} />
+            <div style={{ width: 12, height: 12, marginLeft: -2, marginTop: -6, borderRadius: '50%', background: '#e4d7bd' }} />
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 18, color: '#f1e8d6', fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12, textTransform: 'uppercase', animation: 'he-fade 0.9s ease-out 0.7s both' }}>Taste everything</div>
+    </div>
+  )
+}
+
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => Promise<string | null> }) {
   const [step, setStep] = useState(0)
@@ -2859,6 +2892,10 @@ type Screen = 'map' | 'list' | 'matches' | 'global' | 'profile'
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
+  // Boot gate: splash stays up until auth + first profile lookup settle (min 1.6s, max 5s)
+  const [authReady, setAuthReady] = useState(false)
+  const [profileReady, setProfileReady] = useState(false)
+  const [splashMinDone, setSplashMinDone] = useState(false)
   const [myProfile, setMyProfile] = useState<Partial<Profile> | null>(null)
   const [nearby, setNearby] = useState<(Profile & { isSeed?: boolean })[]>(SEEDS)
   const [nearbyLoading, setNearbyLoading] = useState(true)
@@ -3090,9 +3127,22 @@ export default function App() {
     setActivePulseRoom(prev => prev ? { ...prev, messages: [...prev.messages, msg] } : prev)
   }
 
+  useEffect(() => {
+    const min = setTimeout(() => setSplashMinDone(true), 1600)
+    // Failsafe: never trap the user on the splash if the network hangs
+    const max = setTimeout(() => { setAuthReady(true); setProfileReady(true) }, 5000)
+    return () => { clearTimeout(min); clearTimeout(max) }
+  }, [])
+
   // Auth
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        setUser(session?.user ?? null)
+        if (!session?.user) setProfileReady(true)
+      })
+      .catch(() => setProfileReady(true))
+      .finally(() => setAuthReady(true))
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => setUser(session?.user ?? null))
     return () => subscription.unsubscribe()
   }, [])
@@ -3110,7 +3160,7 @@ export default function App() {
     if (!user) return
 
     // Fetch from Supabase — source of truth
-    supabase.from('profiles').select('*').eq('id', user.id).maybeSingle().then(({ data, error }) => {
+    Promise.resolve(supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()).then(async ({ data, error }) => {
       if (data) {
         // Fresh data from DB — update both state and cache
         setMyProfile(data)
@@ -3125,7 +3175,7 @@ export default function App() {
           try {
             const { location: _loc, created_at: _c, updated_at: _u, ...profile } = JSON.parse(cached)
             const restored = { ...profile, id: user.id, is_anon: user.is_anonymous ?? false }
-            upsertProfile(restored).then(({ data: saved, error: saveErr }) => {
+            await upsertProfile(restored).then(({ data: saved, error: saveErr }) => {
               if (saveErr || !saved) { console.error('[profile] restore failed', saveErr); showError("Profile didn't sync. Retrying next launch."); return }
               setMyProfile(saved)
               localStorage.setItem('he_local_profile', JSON.stringify(saved))
@@ -3134,7 +3184,8 @@ export default function App() {
           } catch {}
         }
       }
-    })
+    }).catch(err => console.error('[profile] load failed', err))
+      .finally(() => setProfileReady(true))
   }, [user])
 
   // ── GPS: real coords → Supabase + nearby fetch + distance calc ──
@@ -3276,6 +3327,7 @@ export default function App() {
     }
   }
 
+  if (!(authReady && profileReady && splashMinDone)) return <Splash />
   if (activeSeedChat) return <SeedChat seed={activeSeedChat} onBack={() => setActiveSeedChat(null)} />
   if (activeMatch) return <ChatScreen match={activeMatch.match} myId={user!.id} other={activeMatch.other} onBack={() => setActiveMatch(null)} />
   if (showAuth) return <AuthScreen onSuccess={() => setShowAuth(false)} />
