@@ -1196,6 +1196,7 @@ function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => Promi
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <style>{GCSS}</style>
       <div style={{ width: '100%', maxWidth: 400 }}>
+        {step === 0 && <img src="/brand/logo.webp" alt="The Hole Eaters" width={160} style={{ display: 'block', margin: '0 auto 24px', height: 'auto', mixBlendMode: 'lighten' }} />}
         <div style={{ display: 'flex', gap: 6, marginBottom: 32 }}>{steps.map((_, i) => (<div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= step ? C.accent : C.surf3, transition: 'background 0.3s' }} />))}</div>
         <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 24 }}>{steps[step].title}</div>
         {steps[step].content}
@@ -2286,8 +2287,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
       <style>{GCSS}</style>
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ textAlign: 'center', marginBottom: 36 }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>🕳️</div>
-          <div style={{ fontWeight: 900, fontSize: 24, letterSpacing: 1 }}>THE HOLE EATERS</div>
+          <img src="/brand/logo.webp" alt="The Hole Eaters" width={220} style={{ display: 'block', margin: '0 auto 8px', height: 'auto', mixBlendMode: 'lighten' }} />
           <div style={{ color: C.dim, fontSize: 13, marginTop: 6 }}>{mode === 'signin' ? 'Sign in to your account' : 'Create your account'}</div>
         </div>
 
@@ -3291,7 +3291,10 @@ export default function App() {
 
       {/* Header */}
       <header role="banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0, zIndex: 200 }}>
-        <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: 1 }}>THE HOLE EATERS</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <img src="/brand/emblem.webp" alt="" width={28} height={28} style={{ mixBlendMode: 'lighten' }} />
+          <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: 1 }}>THE HOLE EATERS</div>
+        </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Ghost Mode Toggle */}
           <button aria-label={isGhost ? "Disable Ghost Mode" : "Enable Ghost Mode"} aria-pressed={isGhost} onClick={() => IS_PREMIUM ? setIsGhost(g => !g) : showError('Ghost Mode is a premium feature 🔒')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 20, background: isGhost ? 'rgba(100,255,218,0.1)' : C.surf2, border: `1px solid ${isGhost ? C.ghost + '55' : IS_PREMIUM ? C.border2 : C.dim + '33'}`, fontSize: 11, fontWeight: 700, color: isGhost ? C.ghost : IS_PREMIUM ? C.dim : C.dim + '88', transition: 'all 0.2s' }}>
