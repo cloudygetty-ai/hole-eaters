@@ -34,7 +34,7 @@ const CHANGELOG: { v: string; date: string; items: string[] }[] = [
   ]},
 ]
 const SANS = "'DM Sans', system-ui, sans-serif"
-const ROLES = ['Top', 'Bottom', 'Versatile', 'Curious', 'Host']
+const ROLES = ['Top', 'Bottom', 'Versatile']
 const EMOJIS = ['🔥', '🐷', '🐻', '😈', '💦', '👅', '⛓️', '🌈']
 const COLORS = [C.accent, C.purple, C.orange, '#ec4899', '#06b6d4', '#10b981']
 const CRUISING = ['Hosting now', 'In my car', 'Come find me', 'Down for whatever', 'Just looking']
@@ -3229,7 +3229,7 @@ export default function App() {
       id: currentUser.id,
       name: profileData.name?.trim() || 'Anonymous',
       age: profileData.age ?? 18,
-      role: profileData.role ?? 'Curious',
+      role: profileData.role ?? 'Versatile',
       bio: profileData.bio ?? '',
       emoji: profileData.emoji ?? '🔥',
       color: profileData.color ?? C.accent,
