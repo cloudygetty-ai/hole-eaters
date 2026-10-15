@@ -25,7 +25,7 @@ export const BODY_TYPES = ['Slim', 'Average', 'Athletic', 'Muscular', 'Stocky', 
 export const INTEREST_GROUPS: { key: MultiKey; label: string; options: string[] }[] = [
   { key: 'location', label: 'Location', options: ['Can host', 'Can travel', 'Car', 'Public'] },
   { key: 'public', label: 'Into Public', options: ['Arcades', 'Bathhouses', 'Cruising spots', 'Gyms', 'Parks', 'Parties/Events', 'Restrooms'] },
-  { key: 'looking_for', label: 'Looking For', options: ['Bros', 'Daddies', 'Guys Next Door', 'Jocks', 'Bears', 'Otters', 'Twinks', 'Muscle', 'Chubs'] },
+  { key: 'looking_for', label: 'Looking For', options: ['Bros', 'Daddies', 'Guys Next Door', 'Jocks', 'Bears', 'Otters', 'Twinks', 'Muscle', 'Chubs', 'Trans'] },
   { key: 'fetishes', label: 'Fetishes', options: ['Body Hair', 'Hard Cocks', 'Cum', 'Feet', 'Gear', 'Jockstraps', 'Leather', 'Piercings', 'Tattoos', 'Underwear'] },
   { key: 'kinks', label: 'Kinks', options: ['Cum Play', 'Edging', 'Bondage', 'Dom', 'Sub', 'Group', 'Role Play', 'Watching'] },
   { key: 'into', label: 'Into', options: ['Fucking', 'Jerk Off', 'Oral', 'Oral (Swallow)', 'Rimming', 'Kissing', 'Making Out'] },
