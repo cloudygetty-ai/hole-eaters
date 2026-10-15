@@ -34,7 +34,7 @@ const CHANGELOG: { v: string; date: string; items: string[] }[] = [
   ]},
 ]
 const SANS = "'DM Sans', system-ui, sans-serif"
-const ROLES = ['Top', 'Bottom', 'Versatile']
+const ROLES = ['Top', 'Power Top', 'Bottom', 'Power Bottom', 'Versatile', 'Side']
 const EMOJIS = ['🔥', '🐷', '🐻', '😈', '💦', '👅', '⛓️', '🌈']
 const COLORS = [C.accent, C.purple, C.orange, '#ec4899', '#06b6d4', '#10b981']
 const CRUISING = ['Hosting now', 'In my car', 'Come find me', 'Down for whatever', 'Just looking']
