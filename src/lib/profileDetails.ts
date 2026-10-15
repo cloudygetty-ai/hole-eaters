@@ -16,6 +16,7 @@ export interface ProfileDetails {
   practices?: string[]
   hiv_status?: string
   hiv_tested?: string // YYYY-MM
+  cover_url?: string // Twitter-style banner image; lives here to avoid a schema change
 }
 
 export type MultiKey = 'location' | 'public' | 'looking_for' | 'fetishes' | 'kinks' | 'into' | 'practices'
@@ -59,5 +60,5 @@ export function formatTested(ym: string | undefined): string {
 }
 
 export function hasAnyDetails(d: ProfileDetails | null | undefined): boolean {
-  return !!d && Object.values(d).some(v => (Array.isArray(v) ? v.length > 0 : v !== undefined && v !== ''))
+  return !!d && Object.entries(d).filter(([k]) => k !== 'cover_url').map(([, v]) => v).some(v => (Array.isArray(v) ? v.length > 0 : v !== undefined && v !== ''))
 }

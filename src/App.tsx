@@ -5,6 +5,7 @@ import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppN
 import { supabase, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, submitVibeCheck, getMyVibeCheckFor, getVibeSummary } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage, VibeSummary } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
+import { CoverBanner } from './components/CoverBanner'
 import { ProfileDetailsFields, ProfileDetailsView, type DetailsTheme } from './components/ProfileDetails'
 import type { ProfileDetails } from './lib/profileDetails'
 
@@ -46,6 +47,8 @@ const IS_PREMIUM = import.meta.env.VITE_IS_PREMIUM === 'true' || window.location
 
 // ─── Global CSS ───────────────────────────────────────────────────────────────
 const GCSS = `
+  @keyframes he-sparkle { 0%,100% { filter: brightness(1) } 50% { filter: brightness(1.6) drop-shadow(0 0 3px #fff) } }
+  @media (prefers-reduced-motion: reduce) { [style*='he-sparkle'] { animation: none !important } }
   @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@400;600;700;800&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: ${C.bg}; color: ${C.text}; font-family: ${SANS}; -webkit-font-smoothing: antialiased; }
@@ -209,25 +212,68 @@ const SEEDS: SeedWithAI[] = [
 
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
+// Frame taken from the logo: bronze spiked star + jewelled ring. Large avatars (80+) get spikes and stones,
+// medium (56+) get stones, small ones just the bronze band so they stay legible in lists.
+const BRONZE_RING = 'conic-gradient(from 200deg, #6b4a2b, #c89a63, #f3d3a1, #a7773f, #5a3d22, #b98a52, #f0cc95, #8a6033, #6b4a2b)'
+const BRONZE_SPIKE = 'conic-gradient(from 0deg, #8a6033, #e7c08a, #6b4a2b, #d9ad73, #5a3d22, #f0cc95, #7a5530, #c89a63, #8a6033)'
+const DIAMOND = 'radial-gradient(circle at 40% 35%, rgba(255,255,255,.95) 0 18%, transparent 30%), conic-gradient(from 22deg, #ffffff, #8fa0b4, #f4f8fc, #6f7d8d, #ffffff, #b5c3d3, #eef3f8, #7b899a, #ffffff)'
+const STAR_CLIP = (() => {
+  const pts: string[] = []
+  for (let i = 0; i < 32; i++) {
+    const a = (i / 32) * Math.PI * 2 - Math.PI / 2, r = i % 2 ? 36 : 50
+    pts.push(`${(50 + Math.cos(a) * r).toFixed(2)}% ${(50 + Math.sin(a) * r).toFixed(2)}%`)
+  }
+  return `polygon(${pts.join(',')})`
+})()
+
 function Avatar({ user, size = 44, showStatus = true, ghost = false }: { user: Partial<Profile>; size?: number; showStatus?: boolean; ghost?: boolean }) {
+  const jewelled = size >= 56 && !ghost
+  const spiked = size >= 80 && !ghost
+  const band = jewelled ? Math.round(size * 0.1) : Math.max(2, Math.round(size * 0.06))
+  const stones = size >= 80 ? 16 : 12
+  const stone = band * 0.82
+  const ringR = size / 2 - band / 2
+  const spikeSize = size * 1.32
+  const dot = Math.min(size * 0.22, 18)
+
   return (
     <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+      {spiked && (
+        <div aria-hidden style={{ position: 'absolute', left: (size - spikeSize) / 2, top: (size - spikeSize) / 2, width: spikeSize, height: spikeSize, background: BRONZE_SPIKE, clipPath: STAR_CLIP, filter: 'drop-shadow(0 0 6px rgba(200,154,99,0.35))' }} />
+      )}
       <div style={{
-        width: size, height: size, borderRadius: '50%',
-        background: ghost ? 'rgba(100,255,218,0.06)' : `linear-gradient(135deg, ${user.color}88, ${user.color}22)`,
-        border: `2px solid ${ghost ? C.ghost + '66' : user.color}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        overflow: 'hidden', fontSize: size * 0.45,
-        filter: ghost ? 'grayscale(0.8) brightness(0.5)' : 'none',
+        position: 'relative', width: size, height: size, borderRadius: '50%', padding: band,
+        background: ghost ? `${C.ghost}55` : BRONZE_RING,
+        boxShadow: '0 0 0 1px rgba(0,0,0,0.6)',
       }}>
-        {ghost ? '👻' : user.video_url
-          ? <video src={user.video_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay muted loop playsInline />
-          : user.photo_url
-          ? <img src={user.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
-          : user.emoji}
+        <div style={{
+          width: '100%', height: '100%', borderRadius: '50%',
+          background: ghost ? 'rgba(100,255,218,0.06)' : `linear-gradient(135deg, ${user.color}88, ${user.color}22)`,
+          boxShadow: 'inset 0 0 0 1.5px #140d07',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          overflow: 'hidden', fontSize: size * 0.4,
+          filter: ghost ? 'grayscale(0.8) brightness(0.5)' : 'none',
+        }}>
+          {ghost ? '👻' : user.video_url
+            ? <video src={user.video_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay muted loop playsInline />
+            : user.photo_url
+            ? <img src={user.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+            : user.emoji}
+        </div>
       </div>
+      {jewelled && Array.from({ length: stones }, (_, i) => {
+        const a = (i / stones) * Math.PI * 2 - Math.PI / 2
+        return (
+          <span key={i} aria-hidden style={{
+            position: 'absolute', width: stone, height: stone, borderRadius: '50%',
+            left: size / 2 + Math.cos(a) * ringR - stone / 2, top: size / 2 + Math.sin(a) * ringR - stone / 2,
+            background: DIAMOND, boxShadow: '0 0 0 0.75px #5a3d22, 0 0 4px rgba(255,255,255,0.5)',
+            animation: i % 5 === 0 ? `he-sparkle 3.2s ease-in-out ${i * 0.35}s infinite` : undefined,
+          }} />
+        )
+      })}
       {showStatus && user.online && !ghost && (
-        <div style={{ position: 'absolute', bottom: 1, right: 1, width: size * 0.26, height: size * 0.26, background: C.green, borderRadius: '50%', border: `2px solid ${C.bg}` }} />
+        <div style={{ position: 'absolute', bottom: jewelled ? band * 0.5 : 1, right: jewelled ? band * 0.5 : 1, width: dot, height: dot, background: C.green, borderRadius: '50%', border: `2px solid ${C.bg}`, zIndex: 1 }} />
       )}
       {ghost && showStatus && (
         <div style={{ position: 'absolute', bottom: 1, right: 1, width: size * 0.26, height: size * 0.26, background: C.ghost, borderRadius: '50%', border: `2px solid ${C.bg}`, animation: 'pulse 1.5s infinite' }} />
@@ -692,15 +738,12 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onBlock, onPass
     <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={onClose} />
       <div style={{ position: 'relative', background: C.surf2, borderRadius: '20px 20px 0 0', padding: '0 0 32px', animation: 'slideUp 0.25s ease', maxHeight: '85vh', overflow: 'auto' }}>
-        <div style={{ height: 200, background: `linear-gradient(135deg, ${user.color}33, ${user.color}11)`, position: 'relative', borderRadius: '20px 20px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-          {(user as any).video_url && (
-            <video src={(user as any).video_url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.7 }} autoPlay muted loop playsInline />
-          )}
-          <div style={{ position: 'relative', zIndex: 1 }}>
-            <Avatar user={user} size={80} />
-          </div>
-          <button aria-label="Close profile" onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,0.4)', color: C.text, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-          {user.cruising_status && <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', background: C.amber, color: '#000', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{user.cruising_status}</div>}
+        <CoverBanner url={(user as Profile).details?.cover_url} videoUrl={(user as any).video_url} height={150} accent={user.color} rounded>
+          <button aria-label="Close profile" onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,0.45)', color: C.text, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>✕</button>
+          {user.cruising_status && <div style={{ position: 'absolute', bottom: 12, right: 14, background: C.amber, color: '#000', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, zIndex: 2 }}>{user.cruising_status}</div>}
+        </CoverBanner>
+        <div style={{ padding: '0 0 0 30px', marginTop: -44, marginBottom: 8, position: 'relative', zIndex: 2 }}>
+          <Avatar user={user} size={84} />
         </div>
         <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, padding: '0 20px' }}>
           {(['profile', 'vibe', 'report'] as const).map(t => (
@@ -3394,6 +3437,18 @@ export default function App() {
     }
   }
 
+  const [coverUploading, setCoverUploading] = useState(false)
+  const handleCoverPick = async (file: File) => {
+    if (!user) return
+    if (file.size > 15 * 1024 * 1024) { showError('Cover photo must be under 15MB'); return }
+    setCoverUploading(true)
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')
+    const { url, error } = await uploadMedia(file, `profiles/cover_${user.id}_${Date.now()}.${ext}`)
+    if (error || !url) { console.error('[cover] upload failed', error); showError('Cover upload failed. Try again.'); setCoverUploading(false); return }
+    await handleProfileSave({ details: { ...(myProfile?.details ?? {}), cover_url: url } })
+    setCoverUploading(false)
+  }
+
   const handleProfileSave = async (updated: Partial<Profile>) => {
     if (!user) return
     const merged = { ...myProfile, ...updated, id: user.id } as Profile & { id: string }
@@ -3534,26 +3589,31 @@ export default function App() {
         )}
         {screen === 'profile' && (
           <div style={{ overflowY: 'auto' }}>
-            {/* Hero */}
-            <div style={{ background: `linear-gradient(180deg, ${myProfile.color}18, transparent)`, padding: '28px 20px 20px', textAlign: 'center' }}>
-              <div style={{ position: 'relative', display: 'inline-block' }}>
-                <Avatar user={{ ...myProfile, online: true }} size={88} ghost={isGhost} />
-                <button onClick={() => setEditingProfile(true)} style={{ position: 'absolute', bottom: 0, right: -4, width: 28, height: 28, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>✏️</button>
-              </div>
-              <div style={{ fontWeight: 800, fontSize: 22, marginTop: 12 }}>{myProfile.name}</div>
-              <div style={{ color: C.muted, fontSize: 14, marginTop: 2 }}>{myProfile.role} · {myProfile.age}</div>
-              {myProfile.tags && myProfile.tags.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', marginTop: 10 }}>
-                  {myProfile.tags.map(t => <span key={t} style={{ fontSize: 11, color: C.dim, background: C.surf3, padding: '3px 9px', borderRadius: 12, fontFamily: FONT }}>{t}</span>)}
+            {/* Hero: Twitter-style cover + overlapping framed avatar */}
+            <div>
+              <CoverBanner url={myProfile.details?.cover_url} videoUrl={myProfile.video_url} height={170} accent={myProfile.color ?? C.accent} onPick={handleCoverPick} uploading={coverUploading} />
+              <div style={{ padding: '0 20px 20px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: -60 }}>
+                  <div style={{ position: 'relative', marginLeft: 16, zIndex: 2 }}>
+                    <Avatar user={{ ...myProfile, online: true }} size={112} ghost={isGhost} />
+                    <button aria-label="Change profile photo" onClick={() => setEditingProfile(true)} style={{ position: 'absolute', bottom: 2, right: -2, width: 30, height: 30, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.5)', zIndex: 3 }}>✏️</button>
+                  </div>
+                  <button onClick={() => setEditingProfile(true)} style={{ padding: '8px 18px', borderRadius: 20, background: 'transparent', border: `1px solid ${C.border2}`, color: C.text, fontSize: 13, fontWeight: 700 }}>Edit profile</button>
                 </div>
-              )}
-              {myProfile.bio && <div style={{ fontSize: 13, color: C.muted, marginTop: 10, lineHeight: 1.5, maxWidth: 280, margin: '10px auto 0' }}>{myProfile.bio}</div>}
-              <div style={{ textAlign: 'left', maxWidth: 360, margin: '0 auto' }}><ProfileDetailsView details={myProfile.details} theme={DT} /></div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center' }}>
-                <button onClick={() => setEditingProfile(true)} style={{ padding: '9px 20px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>Edit Profile</button>
-                <button onClick={() => setShowViewed(true)} style={{ padding: '9px 20px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>👁️ Views</button>
-                <button onClick={handleShareProfile} style={{ padding: '9px 20px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>🔗 Share</button>
-                {(!user || user.is_anonymous) && <button onClick={() => setShowAuth(true)} style={{ padding: '9px 20px', borderRadius: 20, background: `${C.purple}22`, border: `1px solid ${C.purple}44`, color: C.purple, fontSize: 13, fontWeight: 700 }}>🔐 Save Account</button>}
+                <div style={{ fontWeight: 800, fontSize: 22, marginTop: 14 }}>{myProfile.name}</div>
+                <div style={{ color: C.muted, fontSize: 14, marginTop: 2 }}>{myProfile.role} · {myProfile.age}</div>
+                {myProfile.bio && <div style={{ fontSize: 14, color: C.text, marginTop: 10, lineHeight: 1.5 }}>{myProfile.bio}</div>}
+                {myProfile.tags && myProfile.tags.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                    {myProfile.tags.map(t => <span key={t} style={{ fontSize: 11, color: C.dim, background: C.surf3, padding: '3px 9px', borderRadius: 12, fontFamily: FONT }}>{t}</span>)}
+                  </div>
+                )}
+                <ProfileDetailsView details={myProfile.details} theme={DT} />
+                <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+                  <button onClick={() => setShowViewed(true)} style={{ padding: '9px 18px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>👁️ Views</button>
+                  <button onClick={handleShareProfile} style={{ padding: '9px 18px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>🔗 Share</button>
+                  {(!user || user.is_anonymous) && <button onClick={() => setShowAuth(true)} style={{ padding: '9px 18px', borderRadius: 20, background: `${C.purple}22`, border: `1px solid ${C.purple}44`, color: C.purple, fontSize: 13, fontWeight: 700 }}>🔐 Save Account</button>}
+                </div>
               </div>
             </div>
 
