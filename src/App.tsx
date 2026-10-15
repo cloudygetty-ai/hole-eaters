@@ -1186,7 +1186,7 @@ function Splash() {
 }
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
-function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => Promise<string | null> }) {
+function Onboarding({ onComplete, onSignIn }: { onComplete: (p: Partial<Profile>) => Promise<string | null>; onSignIn: () => void }) {
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saveErr, setSaveErr] = useState('')
@@ -1244,6 +1244,11 @@ function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => Promi
         }} disabled={!steps[step].valid() || saving} style={{ width: '100%', marginTop: 24, padding: '15px', borderRadius: 14, background: steps[step].valid() && !saving ? C.accent : C.surf3, color: steps[step].valid() && !saving ? '#fff' : C.dim, fontWeight: 700, fontSize: 16, transition: 'all 0.15s' }}>
           {step < steps.length - 1 ? 'Continue →' : saving ? 'Saving…' : saveErr ? 'Try again' : 'Enter the Map'}
         </button>
+        {step === 0 && (
+          <button onClick={onSignIn} style={{ display: 'block', margin: '18px auto 0', color: C.muted, fontSize: 14 }}>
+            Already have an account? <span style={{ color: C.accent, fontWeight: 700 }}>Sign in</span>
+          </button>
+        )}
       </div>
     </div>
   )
@@ -3332,7 +3337,7 @@ export default function App() {
   if (activeSeedChat) return <SeedChat seed={activeSeedChat} onBack={() => setActiveSeedChat(null)} />
   if (activeMatch) return <ChatScreen match={activeMatch.match} myId={user!.id} other={activeMatch.other} onBack={() => setActiveMatch(null)} />
   if (showAuth) return <AuthScreen onSuccess={() => setShowAuth(false)} />
-  if (!myProfile?.name) return <Onboarding onComplete={handleOnboardingComplete} />
+  if (!myProfile?.name) return <Onboarding onComplete={handleOnboardingComplete} onSignIn={() => setShowAuth(true)} />
 
   const TAB_H = 60
 
