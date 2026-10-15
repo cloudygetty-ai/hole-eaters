@@ -82,9 +82,10 @@ export async function upgradeAnon(email: string, password: string) {
 // ─── Profile views ────────────────────────────────────────────────────────────
 export async function logProfileView(viewerId: string, viewedId: string) {
   if (viewerId === viewedId) return
+  // ignoreDuplicates needs only the INSERT policy; a plain upsert also needs UPDATE, which profile_views lacks (403)
   return supabase.from('profile_views').upsert(
     { viewer_id: viewerId, viewed_id: viewedId, viewed_at: new Date().toISOString() },
-    { onConflict: 'viewer_id,viewed_id', ignoreDuplicates: false }
+    { onConflict: 'viewer_id,viewed_id', ignoreDuplicates: true }
   )
 }
 
@@ -125,6 +126,38 @@ export async function getNearbyUsers(lat: number, lng: number, radius = 5000) {
 // ─── Likes + Matches ─────────────────────────────────────────────────────────
 export async function likeUser(fromId: string, toId: string) {
   return supabase.from('likes').insert({ from_user: fromId, to_user: toId })
+}
+
+// Likes other people sent you, newest first, with the sender's profile
+export async function getLikesReceived(userId: string) {
+  return supabase
+    .from('likes')
+    .select('from_user, created_at, from_profile:profiles!likes_from_user_fkey(*)')
+    .eq('to_user', userId)
+    .order('created_at', { ascending: false })
+    .limit(100)
+}
+
+// A conversation is a matches row; matches.user_a < user_b is enforced by a check constraint.
+// Opening a chat with anyone finds or creates that row, so messaging doesn't require a mutual like.
+export async function startConversation(myId: string, otherId: string) {
+  const [user_a, user_b] = myId < otherId ? [myId, otherId] : [otherId, myId]
+  const existing = await supabase.from('matches').select('*').eq('user_a', user_a).eq('user_b', user_b).maybeSingle()
+  if (existing.data) return { data: existing.data as Match, error: null }
+  const created = await supabase.from('matches').insert({ user_a, user_b }).select().single()
+  if (created.error?.code === '23505') {
+    // Created concurrently (e.g. the mutual-like trigger); read it back
+    return supabase.from('matches').select('*').eq('user_a', user_a).eq('user_b', user_b).single()
+  }
+  return created
+}
+
+export async function isMutualMatch(myId: string, otherId: string) {
+  const [user_a, user_b] = myId < otherId ? [myId, otherId] : [otherId, myId]
+  const { data: theyLikedMe } = await supabase.from('likes').select('from_user').eq('from_user', otherId).eq('to_user', myId).maybeSingle()
+  if (!theyLikedMe) return false
+  const { data } = await supabase.from('matches').select('id').eq('user_a', user_a).eq('user_b', user_b).maybeSingle()
+  return !!data
 }
 
 export async function getMatches(userId: string) {

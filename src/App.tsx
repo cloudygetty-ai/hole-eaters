@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppNotification } from './lib/push'
-import { supabase, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, submitVibeCheck, getMyVibeCheckFor, getVibeSummary } from './lib/supabase'
+import { supabase, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, submitVibeCheck, getMyVibeCheckFor, getVibeSummary } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage, VibeSummary } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 import { ProfileDetailsFields, ProfileDetailsView, type DetailsTheme } from './components/ProfileDetails'
@@ -848,17 +848,32 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Messages arrive from three sources (initial load, realtime, polling) plus our own sends; merge by id
+  const mergeMessages = useCallback((incoming: Message[]) => {
+    if (incoming.length === 0) return
+    setMessages(prev => {
+      const byId = new Map(prev.map(m => [m.id, m]))
+      incoming.forEach(m => byId.set(m.id, m))
+      return [...byId.values()].sort((a, b) => a.created_at.localeCompare(b.created_at))
+    })
+  }, [])
+
   useEffect(() => {
-    getMessages(match.id).then(({ data }) => { if (data) setMessages(data as Message[]) })
-    // Mark messages as read when chat opens
+    const load = () => getMessages(match.id).then(({ data }) => {
+      if (!data) return
+      mergeMessages(data as Message[])
+      if ((data as Message[]).some(m => m.sender_id !== myId && !m.read_at)) markMessagesRead(match.id, myId).catch(() => {})
+    })
+    load()
     markMessagesRead(match.id, myId).catch(() => {})
     const sub = subscribeToMessages(match.id, (msg) => {
-      setMessages(prev => [...prev, msg])
-      // Mark read immediately if the message is from the other person
+      mergeMessages([msg])
       if (msg.sender_id !== myId) markMessagesRead(match.id, myId).catch(() => {})
     })
-    return () => { supabase.removeChannel(sub) }
-  }, [match.id, myId])
+    // Fallback when realtime isn't enabled for the messages table
+    const poll = setInterval(load, 4000)
+    return () => { clearInterval(poll); supabase.removeChannel(sub) }
+  }, [match.id, myId, mergeMessages])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
@@ -898,7 +913,8 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
     const file = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: audioBlob.type })
     const path = `${myId}/voice/${Date.now()}.${ext}`
     const { url } = await uploadMedia(file, path)
-    if (url) await sendMessage(match.id, myId, '', url, 'audio')
+    if (url) { const { data } = await sendMessage(match.id, myId, '', url, 'audio'); if (data) mergeMessages([data as Message]) }
+    else showError('Voice note failed to send')
     cancelVoice(); setUploading(false)
   }
 
@@ -909,12 +925,16 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
       setUploading(true)
       const path = `${myId}/${Date.now()}_${previewFile.name}`
       const { url } = await uploadMedia(previewFile, path)
-      if (url) await sendMessage(match.id, myId, input || '', url, previewFile.type.startsWith('video') ? 'video' : 'image')
+      if (url) { const { data } = await sendMessage(match.id, myId, input || '', url, previewFile.type.startsWith('video') ? 'video' : 'image'); if (data) mergeMessages([data as Message]) }
       else showError('Upload failed')
       setPreviewFile(null); setUploading(false)
     } else {
-      const { error } = await sendMessage(match.id, myId, input)
-      if (error) showError('Failed to send message')
+      const text = input
+      setInput('')
+      const { data, error } = await sendMessage(match.id, myId, text)
+      if (error) { console.error('[chat] send failed', error); showError('Failed to send message'); setInput(text); return }
+      if (data) mergeMessages([data as Message])
+      return
     }
     setInput('')
   }
@@ -1033,23 +1053,45 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
 }
 
 // ─── Matches Screen ───────────────────────────────────────────────────────────
-function MatchesScreen({ userId, onOpenChat, onClearUnread }: { userId: string; onOpenChat: (match: Match, other: Profile) => void; onClearUnread: (matchId: string) => void }) {
+function MatchesScreen({ userId, onOpenChat, onClearUnread, onOpenProfile }: { userId: string; onOpenChat: (match: Match, other: Profile) => void; onClearUnread: (matchId: string) => void; onOpenProfile: (p: Profile) => void }) {
   const [matches, setMatches] = useState<any[]>([])
+  const [likers, setLikers] = useState<{ from_user: string; created_at: string; from_profile: Profile | null }[]>([])
   const [loading, setLoading] = useState(true)
   useEffect(() => {
     setLoading(true)
-    getMatches(userId).then(({ data }) => { if (data) setMatches(data); setLoading(false) })
+    Promise.all([getMatches(userId), getLikesReceived(userId)]).then(([m, l]) => {
+      if (m.data) setMatches(m.data)
+      if (l.data) setLikers((l.data as any[]).filter(x => x.from_profile))
+      setLoading(false)
+    })
   }, [userId])
 
   if (loading) return <MatchesSkeleton />
 
+  const sectionLabel: React.CSSProperties = { fontSize: 11, color: C.dim, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }
+
   return (
     <div style={{ padding: 16 }}>
+      {likers.length > 0 && (
+        <div style={{ marginBottom: 22 }}>
+          <div style={sectionLabel}>🔥 Liked you · {likers.length}</div>
+          <div style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
+            {likers.map(l => (
+              <button key={l.from_user} onClick={() => onOpenProfile(l.from_profile!)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 64 }}>
+                <Avatar user={l.from_profile!} size={56} />
+                <span style={{ fontSize: 11, color: C.muted, maxWidth: 64, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.from_profile!.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={sectionLabel}>💬 Messages</div>
       {matches.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 40, color: C.dim }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>🤝</div>
-          <div style={{ fontSize: 14 }}>No matches yet.</div>
-          <div style={{ fontSize: 12, marginTop: 6 }}>Like someone on the map and if they like back, you match.</div>
+        <div style={{ textAlign: 'center', padding: 32, color: C.dim }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>💬</div>
+          <div style={{ fontSize: 14 }}>No conversations yet.</div>
+          <div style={{ fontSize: 12, marginTop: 6 }}>Open anyone's profile and tap Message to start one.</div>
         </div>
       ) : matches.map(m => {
         const other = m.user_a === userId ? m.user_b_profile : m.user_a_profile
@@ -1061,7 +1103,7 @@ function MatchesScreen({ userId, onOpenChat, onClearUnread }: { userId: string; 
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{other.name}</div>
-              <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>Matched {new Date(m.created_at).toLocaleDateString()}</div>
+              <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>Since {new Date(m.created_at).toLocaleDateString()}</div>
             </div>
             <span style={{ color: C.muted, fontSize: 18 }}>›</span>
           </div>
@@ -3485,7 +3527,7 @@ export default function App() {
           )
         })()}
         {screen === 'matches' && user && (
-          <MatchesScreen userId={user.id} onOpenChat={(match, other) => setActiveMatch({ match, other })} onClearUnread={(id) => setUnreadCounts(prev => { const n = {...prev}; delete n[id]; return n })} />
+          <MatchesScreen userId={user.id} onOpenProfile={(p) => setSelectedUser(p)} onOpenChat={(match, other) => setActiveMatch({ match, other })} onClearUnread={(id) => setUnreadCounts(prev => { const n = {...prev}; delete n[id]; return n })} />
         )}
         {screen === 'global' && (
           <GlobalChat userId={user?.id ?? null} isGhost={isGhost} />
@@ -3593,7 +3635,7 @@ export default function App() {
           { id: 'map', label: 'Map', icon: '📍' },
           { id: 'list', label: 'Nearby', icon: '👥' },
           { id: 'global', label: 'Whore-izon', icon: '🔥' },
-          { id: 'matches', label: 'Matches', icon: '❤️', badge: totalUnread > 0 ? totalUnread : 0 },
+          { id: 'matches', label: 'Inbox', icon: '💬', badge: totalUnread > 0 ? totalUnread : 0 },
           { id: 'profile', label: 'Me', icon: '👤' },
         ] as { id: Screen; label: string; icon: string }[]).map(tab => (
           <button key={tab.id} aria-label={tab.label} aria-current={screen === tab.id ? "page" : undefined} onClick={() => setScreen(tab.id)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, color: screen === tab.id ? (isGhost && tab.id === 'global' ? C.ghost : C.accent) : C.dim, background: 'none', transition: 'color 0.15s', position: 'relative' }}>
@@ -3622,7 +3664,10 @@ export default function App() {
             likeUser(user.id, selectedUser.id).then(({ error }) => {
               // 23505 = already liked; treat as success
               if (error && error.code !== '23505') { console.error('[like] failed', error); showError("Like didn't send. Try again."); return }
-              showError(`🔥 You liked ${selectedUser.name}`)  // error toast doubles as info toast app-wide
+              const liked = selectedUser
+              isMutualMatch(user.id, liked.id).then(mutual => {
+                showError(mutual ? `🔥 It's a match with ${liked.name}! Say hi.` : `🔥 You liked ${liked.name}`)  // error toast doubles as info toast app-wide
+              })
             })
             if (isGhost) setIsGhost(false)
           }}
@@ -3630,9 +3675,13 @@ export default function App() {
             if ((selectedUser as any).isSeed) {
               setActiveSeedChat(selectedUser as SeedWithAI)
               setSelectedUser(null)
-            } else {
-              setSelectedUser(null)
-              setScreen('matches')
+            } else if (user) {
+              const other = selectedUser as Profile
+              startConversation(user.id, other.id).then(({ data, error }) => {
+                if (error || !data) { console.error('[chat] start failed', error); showError("Couldn't open chat. Try again."); return }
+                setSelectedUser(null)
+                setActiveMatch({ match: data as Match, other })
+              })
             }
           }}
           onBlock={handleBlock}
