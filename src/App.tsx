@@ -3174,7 +3174,7 @@ export default function App() {
         if (cached && cachedUserId) {
           try {
             const { location: _loc, created_at: _c, updated_at: _u, ...profile } = JSON.parse(cached)
-            const restored = { ...profile, id: user.id, is_anon: user.is_anonymous ?? false }
+            const restored = { ...profile, id: user.id, is_anon: false }
             await upsertProfile(restored).then(({ data: saved, error: saveErr }) => {
               if (saveErr || !saved) { console.error('[profile] restore failed', saveErr); showError("Profile didn't sync. Retrying next launch."); return }
               setMyProfile(saved)
@@ -3287,7 +3287,8 @@ export default function App() {
       tags: profileData.tags ?? [],
       photo_url: profileData.photo_url ?? null,
       video_url: profileData.video_url ?? null,
-      is_anon: currentUser.is_anonymous ?? false,
+      // nearby_users hides is_anon profiles; guest accounts must stay visible on the map
+      is_anon: false,
       online: true,
       last_seen: new Date().toISOString(),
     }
