@@ -1775,11 +1775,19 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
     if (!mapRef.current || !mapReady) return
     nearbyMarkersRef.current.forEach(m => m.remove())
     nearbyMarkersRef.current.clear()
+    // Locations are rounded server-side (~100 m), so several people can share one point; fan them out
+    const stackCount = new Map<string, number>()
     nearby.forEach((u, idx) => {
       let lat: number, lng: number
       const loc = (u as any).location as { lat: number; lng: number } | null
       if (loc?.lat && loc?.lng) {
-        lat = loc.lat; lng = loc.lng
+        const key = `${loc.lat},${loc.lng}`
+        const n = stackCount.get(key) ?? 0
+        stackCount.set(key, n + 1)
+        const ring = n === 0 ? 0 : 0.00035 * Math.ceil(n / 6)
+        const angle = (n % 6) * (Math.PI / 3)
+        lat = loc.lat + Math.sin(angle) * ring
+        lng = loc.lng + Math.cos(angle) * ring * 1.3
       } else if ((u as any).isSeed) {
         const angle = (idx / SEEDS.length) * Math.PI * 2
         lat = anchorLat + Math.sin(angle) * 0.0022
