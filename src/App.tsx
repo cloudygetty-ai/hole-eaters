@@ -6,6 +6,8 @@ import { supabase, getLikesReceived, startConversation, isMutualMatch, signInAno
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage, VibeSummary } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 import { CoverBanner } from './components/CoverBanner'
+import { StickerPicker } from './components/StickerPicker'
+import { isStickerUrl } from './lib/stickers'
 import { ProfileDetailsFields, ProfileDetailsView, type DetailsTheme } from './components/ProfileDetails'
 import type { ProfileDetails } from './lib/profileDetails'
 
@@ -689,7 +691,8 @@ function SeedChat({ seed, onBack }: { seed: SeedWithAI; onBack: () => void }) {
 }
 
 // ─── Profile Drawer ───────────────────────────────────────────────────────────
-function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onBlock, onPass }: { user: SeedWithAI | (Profile & { isSeed?: false }); myId: string; onClose: () => void; onLike: () => void; onMessage: () => void; onBlock: (id: string) => void; onPass: (id: string) => void }) {
+function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock, onPass }: { user: SeedWithAI | (Profile & { isSeed?: false }); myId: string; onClose: () => void; onLike: () => void; onMessage: () => void; onTap: (stickerUrl: string) => void; onBlock: (id: string) => void; onPass: (id: string) => void }) {
+  const [showTap, setShowTap] = useState(false)
   const [tab, setTab] = useState<'profile' | 'vibe' | 'report'>('profile')
   const [liked, setLiked] = useState(false)
   const [reportReason, setReportReason] = useState<ReportReason>('fake_profile')
@@ -858,6 +861,9 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onBlock, onPass
             {liked ? '❤️ Liked' : '🤙 Like'}
           </button>
           {!user.isSeed && (
+            <button aria-label="Send a tap" onClick={() => setShowTap(true)} style={{ width: 46, height: 46, borderRadius: 12, background: `${C.accent}18`, border: `1px solid ${C.accent}44`, fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🍑</button>
+          )}
+          {!user.isSeed && (
             <button onClick={onMessage} style={{ flex: 1, padding: '13px', borderRadius: 12, background: C.surf3, border: `1px solid ${C.border2}`, fontWeight: 700, fontSize: 14 }}>💬 Message</button>
           )}
           {user.isSeed && (
@@ -867,6 +873,7 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onBlock, onPass
           )}
         </div>
       </div>
+      {showTap && <StickerPicker title={`Send ${user.name} a tap`} onPick={url => { setShowTap(false); onTap(url) }} onClose={() => setShowTap(false)} background={C.surf2} border={C.border2} />}
     </div>
   )
 }
@@ -877,6 +884,7 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
   const [input, setInput] = useState('')
   const [uploading, setUploading] = useState(false)
   const [previewFile, setPreviewFile] = useState<File | null>(null)
+  const [showStickers, setShowStickers] = useState(false)
   // 1-on-1 video call
   const [videoCall, setVideoCall] = useState(false)
   const myProfilePartial: Partial<Profile> = { id: myId }
@@ -961,6 +969,13 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
     cancelVoice(); setUploading(false)
   }
 
+  const sendSticker = async (url: string) => {
+    setShowStickers(false)
+    const { data, error } = await sendMessage(match.id, myId, '', url, 'image')
+    if (error) { console.error('[chat] sticker failed', error); showError("Sticker didn't send"); return }
+    if (data) mergeMessages([data as Message])
+  }
+
   const send = async () => {
     if (audioBlob) { await sendVoice(); return }
     if (!input.trim() && !previewFile) return
@@ -1023,9 +1038,15 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
         >📹</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {messages.length === 0 && <div style={{ textAlign: 'center', color: C.dim, fontSize: 13, marginTop: 40 }}><div style={{ fontSize: 30, marginBottom: 8 }}>💬</div>Say something. You matched for a reason.</div>}
+        {messages.length === 0 && <div style={{ textAlign: 'center', color: C.dim, fontSize: 13, marginTop: 40 }}><div style={{ fontSize: 30, marginBottom: 8 }}>💬</div>Say something, or send a 🍑 sticker.</div>}
         {messages.map(msg => {
           const mine = msg.sender_id === myId
+          if (isStickerUrl(msg.media_url) && !msg.content) return (
+            <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
+              <img src={msg.media_url!} alt="Sticker" style={{ width: 128, height: 128, objectFit: 'contain', filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.4))' }} />
+              {mine && <div style={{ fontSize: 10, color: msg.read_at ? C.green : C.dim, marginTop: 2, marginRight: 4 }}>{msg.read_at ? '✓✓ Read' : '✓ Sent'}</div>}
+            </div>
+          )
           return (
             <div key={msg.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
               <div style={{ maxWidth: '72%', background: mine ? C.accent : C.surf2, borderRadius: mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding: msg.media_type === 'audio' ? '10px 14px' : msg.media_url ? '4px' : '10px 14px', overflow: 'hidden', minWidth: msg.media_type === 'audio' ? 180 : undefined }}>
@@ -1044,6 +1065,7 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
         })}
         <div ref={bottomRef} />
       </div>
+      {showStickers && <StickerPicker title="Stickers" onPick={sendSticker} onClose={() => setShowStickers(false)} background={C.surf2} border={C.border2} />}
 
       {/* Voice recording preview */}
       {(recording || audioUrl) && (
@@ -1078,7 +1100,10 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
       <div style={{ display: 'flex', gap: 8, padding: '10px 12px', background: C.surface, borderTop: `1px solid ${C.border}` }}>
         <input type="file" accept="image/*,video/*" ref={fileRef} style={{ display: 'none' }} onChange={e => e.target.files?.[0] && setPreviewFile(e.target.files[0])} />
         {!recording && !audioUrl && (
+          <>
+          <button aria-label="Send a sticker" onClick={() => setShowStickers(true)} style={{ width: 40, height: 40, borderRadius: 10, background: C.surf2, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🍑</button>
           <button aria-label="Attach file" onClick={() => fileRef.current?.click()} style={{ width: 40, height: 40, borderRadius: 10, background: C.surf2, color: C.muted, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>📎</button>
+          </>
         )}
         {!recording && !audioUrl && !previewFile && (
           <button aria-label={recording ? 'Stop recording' : 'Record voice note'} onClick={recording ? stopRecording : startRecording} style={{ width: 40, height: 40, borderRadius: 10, background: recording ? 'rgba(239,68,68,0.2)' : C.surf2, color: recording ? '#ef4444' : C.muted, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🎙️</button>
@@ -3743,6 +3768,16 @@ export default function App() {
                 setActiveMatch({ match: data as Match, other })
               })
             }
+          }}
+          onTap={(url) => {
+            if (!user) return
+            const other = selectedUser as Profile
+            startConversation(user.id, other.id).then(async ({ data, error }) => {
+              if (error || !data) { console.error('[tap] start failed', error); showError("Tap didn't send. Try again."); return }
+              const res = await sendMessage((data as Match).id, user.id, '', url, 'image')
+              if (res.error) { console.error('[tap] send failed', res.error); showError("Tap didn't send. Try again."); return }
+              showError(`🍑 Tap sent to ${other.name}`)  // error toast doubles as info toast app-wide
+            })
           }}
           onBlock={handleBlock}
           onPass={handlePass}
