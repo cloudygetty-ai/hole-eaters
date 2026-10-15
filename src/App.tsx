@@ -1153,8 +1153,10 @@ function MediaUploadStep({ photoUrl, videoUrl, color, emoji, onPhoto, onVideo }:
 
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
-function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => void }) {
+function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => Promise<string | null> }) {
   const [step, setStep] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const [saveErr, setSaveErr] = useState('')
   const [form, setForm] = useState({ name: '', age: '', role: 'Versatile', bio: '', emoji: '🔥', color: C.accent, tags: [] as string[], photo_url: null as string | null, video_url: null as string | null })
   const [newTag, setNewTag] = useState('')
   const inputStyle: React.CSSProperties = { background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 12, padding: '13px 16px', color: C.text, fontSize: 15, width: '100%', outline: 'none' }
@@ -1197,8 +1199,16 @@ function Onboarding({ onComplete }: { onComplete: (p: Partial<Profile>) => void 
         <div style={{ display: 'flex', gap: 6, marginBottom: 32 }}>{steps.map((_, i) => (<div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= step ? C.accent : C.surf3, transition: 'background 0.3s' }} />))}</div>
         <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 24 }}>{steps[step].title}</div>
         {steps[step].content}
-        <button onClick={() => { if (step < steps.length - 1) { if (steps[step].valid()) setStep(s => s + 1) } else onComplete({ ...form, age: Number(form.age) }) }} disabled={!steps[step].valid()} style={{ width: '100%', marginTop: 24, padding: '15px', borderRadius: 14, background: steps[step].valid() ? C.accent : C.surf3, color: steps[step].valid() ? '#fff' : C.dim, fontWeight: 700, fontSize: 16, transition: 'all 0.15s' }}>
-          {step < steps.length - 1 ? 'Continue →' : 'Enter the Map'}
+        {saveErr && <div role="alert" style={{ color: '#ef4444', fontSize: 13, marginTop: 16 }}>{saveErr}</div>}
+        <button onClick={async () => {
+          if (!steps[step].valid() || saving) return
+          if (step < steps.length - 1) { setStep(s => s + 1); return }
+          setSaving(true); setSaveErr('')
+          const err = await onComplete({ ...form, age: Number(form.age) })
+          setSaving(false)
+          if (err) setSaveErr(err)
+        }} disabled={!steps[step].valid() || saving} style={{ width: '100%', marginTop: 24, padding: '15px', borderRadius: 14, background: steps[step].valid() && !saving ? C.accent : C.surf3, color: steps[step].valid() && !saving ? '#fff' : C.dim, fontWeight: 700, fontSize: 16, transition: 'all 0.15s' }}>
+          {step < steps.length - 1 ? 'Continue →' : saving ? 'Saving…' : saveErr ? 'Try again' : 'Enter the Map'}
         </button>
       </div>
     </div>
@@ -3110,15 +3120,15 @@ export default function App() {
         // No profile for this user ID — check if we have a cached profile to restore
         const cached = localStorage.getItem('he_local_profile')
         const cachedUserId = localStorage.getItem('he_profile_user_id')
-        if (cached && cachedUserId && cachedUserId !== user.id) {
-          // Session was lost (new anon ID) — re-upsert cached profile under new ID
+        // Covers both a lost session (new anon ID) and an earlier save that never reached the DB
+        if (cached && cachedUserId) {
           try {
-            const profile = JSON.parse(cached)
-            const restored = { ...profile, id: user.id }
-            upsertProfile(restored).then(({ data: saved }) => {
-              const final = saved ?? restored
-              setMyProfile(final)
-              localStorage.setItem('he_local_profile', JSON.stringify(final))
+            const { location: _loc, created_at: _c, updated_at: _u, ...profile } = JSON.parse(cached)
+            const restored = { ...profile, id: user.id, is_anon: user.is_anonymous ?? false }
+            upsertProfile(restored).then(({ data: saved, error: saveErr }) => {
+              if (saveErr || !saved) { console.error('[profile] restore failed', saveErr); showError("Profile didn't sync. Retrying next launch."); return }
+              setMyProfile(saved)
+              localStorage.setItem('he_local_profile', JSON.stringify(saved))
               localStorage.setItem('he_profile_user_id', user.id)
             })
           } catch {}
@@ -3204,21 +3214,41 @@ export default function App() {
     }
   }, [user])
 
-  const handleOnboardingComplete = async (profileData: Partial<Profile>) => {
+  // Returns an error message for the onboarding screen, or null once the profile is persisted.
+  const handleOnboardingComplete = async (profileData: Partial<Profile>): Promise<string | null> => {
     let currentUser = user
     if (!currentUser) {
       const { data, error: authErr } = await signInAnon()
-      if (authErr || !data.user) return
+      if (authErr || !data.user) {
+        console.error('[onboarding] anonymous sign-in failed', authErr)
+        return "Couldn't start your session. Check your connection and try again."
+      }
       currentUser = data.user; setUser(currentUser)
-      await new Promise(res => setTimeout(res, 300))
     }
-    const fullProfile = { id: currentUser.id, name: profileData.name ?? 'Anonymous', age: profileData.age ?? 18, role: profileData.role ?? 'Curious', bio: profileData.bio ?? '', emoji: profileData.emoji ?? '🔥', color: profileData.color ?? C.accent, tags: profileData.tags ?? [], is_anon: false, online: true, last_seen: new Date().toISOString() }
-    const { data, error } = await upsertProfile(fullProfile as Profile & { id: string })
-    if (error) { setMyProfile(fullProfile); return }
-    const finalProfile = data ?? fullProfile
-    setMyProfile(finalProfile)
-    localStorage.setItem('he_local_profile', JSON.stringify(finalProfile))
+    const fullProfile = {
+      id: currentUser.id,
+      name: profileData.name?.trim() || 'Anonymous',
+      age: profileData.age ?? 18,
+      role: profileData.role ?? 'Curious',
+      bio: profileData.bio ?? '',
+      emoji: profileData.emoji ?? '🔥',
+      color: profileData.color ?? C.accent,
+      tags: profileData.tags ?? [],
+      photo_url: profileData.photo_url ?? null,
+      video_url: profileData.video_url ?? null,
+      is_anon: currentUser.is_anonymous ?? false,
+      online: true,
+      last_seen: new Date().toISOString(),
+    }
+    const { data, error } = await upsertProfile(fullProfile)
+    if (error || !data) {
+      console.error('[onboarding] profile save failed', error)
+      return "Your profile didn't save. Try again."
+    }
+    setMyProfile(data)
+    localStorage.setItem('he_local_profile', JSON.stringify(data))
     localStorage.setItem('he_profile_user_id', currentUser.id)
+    return null
   }
 
   const handleMovePin = useCallback((pos: { x: number; y: number }) => { setMyPos(pos) }, [])
@@ -3237,7 +3267,8 @@ export default function App() {
     if (!user) return
     const merged = { ...myProfile, ...updated, id: user.id } as Profile & { id: string }
     const { data, error } = await upsertProfile(merged)
-    if (!error) {
+    if (error) { console.error('[profile] save failed', error); showError("Profile didn't save. Try again."); return }
+    {
       const saved = data ?? merged
       setMyProfile(saved)
       localStorage.setItem('he_local_profile', JSON.stringify(saved))
