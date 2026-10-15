@@ -45,7 +45,8 @@ const EMOJIS = ['🔥', '🐷', '🐻', '😈', '💦', '👅', '⛓️', '🌈'
 const COLORS = [C.accent, C.purple, C.orange, '#ec4899', '#06b6d4', '#10b981']
 const CRUISING = ['Hosting now', 'In my car', 'Come find me', 'Down for whatever', 'Just looking']
 const PULSE_TTL = 60 * 60 * 1000 // 60 min
-const IS_PREMIUM = import.meta.env.VITE_IS_PREMIUM === 'true' || window.location.hostname.includes('premium')
+// Every feature is free for everyone (Ghost Mode, Street View, ...). Flip this back to gate features later.
+const IS_PREMIUM = true
 
 // ─── Global CSS ───────────────────────────────────────────────────────────────
 const GCSS = `

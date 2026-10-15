@@ -82,11 +82,10 @@ export async function upgradeAnon(email: string, password: string) {
 // ─── Profile views ────────────────────────────────────────────────────────────
 export async function logProfileView(viewerId: string, viewedId: string) {
   if (viewerId === viewedId) return
-  // ignoreDuplicates needs only the INSERT policy; a plain upsert also needs UPDATE, which profile_views lacks (403)
-  return supabase.from('profile_views').upsert(
-    { viewer_id: viewerId, viewed_id: viewedId, viewed_at: new Date().toISOString() },
-    { onConflict: 'viewer_id,viewed_id', ignoreDuplicates: true }
-  )
+  // Plain insert: only needs the INSERT policy. A repeat view returns 409 (already logged), which is fine.
+  const res = await supabase.from('profile_views').insert({ viewer_id: viewerId, viewed_id: viewedId, viewed_at: new Date().toISOString() })
+  if (res.error && res.error.code !== '23505') console.error('[views] log failed', res.error)
+  return res
 }
 
 export async function getProfileViews(userId: string) {
