@@ -6,6 +6,14 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/app",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/app/:path*",
+      "destination": "/app.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
@@ -37,6 +45,15 @@
         {
           "key": "Permissions-Policy",
           "value": "geolocation=(self), microphone=(self), camera=(self), push=(self)"
+        }
+      ]
+    },
+    {
+      "source": "/(index.html|app.html|)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
         }
       ]
     }
