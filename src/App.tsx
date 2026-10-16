@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import mapboxgl from "mapbox-gl";
+import { ArrowUp, ChevronDown, Video, VideoOff } from 'lucide-react'
 import "mapbox-gl/dist/mapbox-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppNotification } from './lib/push'
 import { supabase, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, submitVibeCheck, getMyVibeCheckFor, getVibeSummary } from './lib/supabase'
@@ -1630,8 +1631,19 @@ function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoo
   const [input, setInput] = useState('')
   const [timeLeft, setTimeLeft] = useState(0)
   const [videoOn, setVideoOn] = useState(false)
+  const [confirmClose, setConfirmClose] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const { streams, micOn, camOn, toggleMic, toggleCam, error: videoError } = useWebRTC(room.id, myProfile, videoOn)
+  const canSend = input.trim().length > 0
+
+  // Unmounting tears down WebRTC, so closing mid-call needs a second tap; disarms after 3s.
+  const requestClose = () => (videoOn && !confirmClose ? setConfirmClose(true) : onClose())
+  useEffect(() => {
+    if (!confirmClose) return
+    const id = setTimeout(() => setConfirmClose(false), 3000)
+    return () => clearTimeout(id)
+  }, [confirmClose])
 
   useEffect(() => {
     const tick = () => setTimeLeft(Math.max(0, room.expiresAt - Date.now()))
@@ -1659,7 +1671,7 @@ function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoo
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 600, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }} onClick={onClose} />
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }} onClick={requestClose} />
       <div style={{ position: 'relative', background: C.surf2, borderRadius: '24px 24px 0 0', animation: 'slideUp 0.3s ease', maxHeight: '82vh', display: 'flex', flexDirection: 'column' }}>
         {/* Countdown bar */}
         <div style={{ height: 3, background: C.surf3, borderRadius: '24px 24px 0 0', overflow: 'hidden' }}>
@@ -1671,15 +1683,24 @@ function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoo
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
             <div style={{ width: 10, height: 10, borderRadius: '50%', background: C.accent, animation: 'pulse 1s infinite' }} />
             <div style={{ fontWeight: 800, fontSize: 15 }}>{room.name}</div>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 11, color: timeLeft < 300000 ? '#ef4444' : C.dim, fontFamily: FONT }}>⏱ {fmt(timeLeft)}</span>
-              <button onClick={onClose} style={{ color: C.dim, fontSize: 16, marginLeft: 4 }}>✕</button>
-            </div>
+            {/* Labeled close: a lone ✕ beside the countdown read as "dismiss timer".
+                Closing only hides the sheet (room stays joined), so confirm only when it would drop a live video call. */}
+            <button
+              onClick={requestClose}
+              aria-label={confirmClose ? 'Confirm end video and close room' : 'Close room'}
+              style={{ marginLeft: 'auto', minHeight: 44, padding: '0 14px', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, background: confirmClose ? C.accent : 'transparent', color: confirmClose ? C.bg : C.muted, border: `1px solid ${confirmClose ? C.accent : C.border2}`, transition: 'all 0.15s' }}
+            >
+              <ChevronDown size={16} strokeWidth={2} aria-hidden />{confirmClose ? 'End video?' : 'Close'}
+            </button>
           </div>
-          <div style={{ fontSize: 11, color: C.dim, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>{room.memberIds.length} in room · {fmt(timeLeft)} left</span>
-            <button onClick={() => setVideoOn(v => !v)} style={{ fontSize: 11, background: videoOn ? C.accent : C.surf3, color: videoOn ? '#fff' : C.dim, border: `1px solid ${videoOn ? C.accent : C.border2}`, borderRadius: 8, padding: '3px 10px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-              {videoOn ? '📹 On' : '📹 Join Video'}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <span style={{ fontSize: 12, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>
+              {room.memberIds.length} in room · <time role="timer" aria-label={`${fmt(timeLeft)} remaining`} style={{ color: timeLeft < 300000 ? '#ef4444' : C.muted, fontFamily: FONT }}>{fmt(timeLeft)}</time> left
+            </span>
+            {/* Primary CTA: filled accent, dark label (≈6.2:1) — white on #ff4d6d fails AA. */}
+            <button onClick={() => setVideoOn(v => !v)} aria-pressed={videoOn} style={{ minHeight: 44, padding: '0 16px', borderRadius: 12, fontSize: 14, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8, background: videoOn ? 'transparent' : C.accent, color: videoOn ? C.accent : C.bg, border: `1.5px solid ${C.accent}`, flexShrink: 0, transition: 'all 0.15s' }}>
+              {videoOn ? <VideoOff size={18} strokeWidth={2} aria-hidden /> : <Video size={18} strokeWidth={2} aria-hidden />}
+              {videoOn ? 'Leave video' : 'Join video'}
             </button>
           </div>
         </div>
@@ -1703,10 +1724,11 @@ function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoo
         {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 200 }}>
           {room.messages.length === 0 && (
-            <div style={{ textAlign: 'center', color: C.dim, fontSize: 13, paddingTop: 30 }}>
-              <div style={{ fontSize: 28, marginBottom: 6 }}>📡</div>
-              Room is live. Say something.
-            </div>
+            <button onClick={() => inputRef.current?.focus()} style={{ margin: 'auto', padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, textAlign: 'center', cursor: 'text' }}>
+              <span aria-hidden style={{ fontSize: 30, marginBottom: 4 }}>📡</span>
+              <span style={{ fontSize: 18, fontWeight: 800, color: C.text }}>Room is live.</span>
+              <span style={{ fontSize: 14, color: C.muted }}>Be the first — say something.</span>
+            </button>
           )}
           {room.messages.map(msg => {
             const mine = msg.senderId === myProfile.id
@@ -1724,10 +1746,13 @@ function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoo
         </div>
 
         {/* Input */}
-        <div style={{ display: 'flex', gap: 8, padding: '10px 14px 24px', borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder="Message the room..." style={{ flex: 1, background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 14, outline: 'none' }} />
-          <button onClick={send} disabled={!input.trim()} style={{ width: 40, height: 40, borderRadius: 10, background: input.trim() ? C.accent : C.surf3, color: '#fff', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s' }}>↑</button>
-        </div>
+        <form onSubmit={e => { e.preventDefault(); send() }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px calc(14px + env(safe-area-inset-bottom))', borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+          {/* 16px font: anything smaller triggers iOS Safari zoom-on-focus. */}
+          <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} placeholder="Message the room…" aria-label="Message the room" enterKeyHint="send" maxLength={1000} style={{ flex: 1, minWidth: 0, minHeight: 44, background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 22, padding: '0 16px', color: C.text, fontSize: 16, outline: 'none' }} />
+          <button type="submit" disabled={!canSend} aria-label="Send message" style={{ width: 44, height: 44, borderRadius: '50%', background: canSend ? C.accent : C.surf3, color: canSend ? C.bg : C.dim, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s', cursor: canSend ? 'pointer' : 'default' }}>
+            <ArrowUp size={20} strokeWidth={2.5} aria-hidden />
+          </button>
+        </form>
       </div>
     </div>
   )
