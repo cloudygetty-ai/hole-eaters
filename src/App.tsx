@@ -1393,9 +1393,10 @@ function Onboarding({ onComplete, onSignIn }: { onComplete: (p: Partial<Profile>
 // ─── Street View Modal ────────────────────────────────────────────────────────
 function StreetViewModal({ lat, lng, onClose }: { lat: number; lng: number; onClose: () => void }) {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_KEY as string | undefined
+  // Keyless svembed is undocumented but works today; the keyed Embed API is preferred when the key is set at build time.
   const embedSrc = apiKey
     ? `https://www.google.com/maps/embed/v1/streetview?key=${apiKey}&location=${lat},${lng}&heading=0&pitch=0&fov=90`
-    : null
+    : `https://www.google.com/maps?layer=c&cbll=${lat},${lng}&cbp=12,0,0,0,0&output=svembed`
   const mapsUrl = `https://maps.google.com/maps?q=&layer=c&cbll=${lat},${lng}&cbp=12,0,0,0,0&z=17`
 
   return (
@@ -1407,23 +1408,7 @@ function StreetViewModal({ lat, lng, onClose }: { lat: number; lng: number; onCl
           Open in Maps ↗
         </a>
       </div>
-      {embedSrc ? (
-        <iframe src={embedSrc} style={{ flex: 1, border: 'none' }} allowFullScreen title="Street View" />
-      ) : (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: 32 }}>
-          <div style={{ fontSize: 48 }}>📷</div>
-          <div style={{ color: C.text, fontWeight: 700, fontSize: 17 }}>Street View</div>
-          <div style={{ color: C.dim, fontSize: 13, textAlign: 'center', lineHeight: 1.6 }}>
-            {lat.toFixed(5)}, {lng.toFixed(5)}
-          </div>
-          <a href={mapsUrl} target="_blank" rel="noopener noreferrer" style={{ background: C.accent, color: '#fff', padding: '12px 24px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
-            🗺️ Open Google Street View
-          </a>
-          <div style={{ color: C.dim, fontSize: 11, textAlign: 'center' }}>
-            Set VITE_GOOGLE_MAPS_KEY to embed inline
-          </div>
-        </div>
-      )}
+      <iframe src={embedSrc} style={{ flex: 1, border: 'none' }} allowFullScreen title="Street View" />
     </div>
   )
 }
