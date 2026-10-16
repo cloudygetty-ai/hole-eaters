@@ -18,3 +18,12 @@ Location-based proximity app. PWA.
 ```bash
 pnpm install && pnpm dev
 ```
+
+## Routes
+- `/` — static landing (`index.html`, `src/landing/`): SEO/OG, native-app waitlist. Members with a session, installed PWAs, and auth callbacks are forwarded to `/app` before paint; `/?home` forces the landing.
+- `/app` — the React PWA (`app.html`, `src/main.tsx`).
+
+## Growth
+- Waitlist + referrals: `supabase/migrations/20261016200000_growth_waitlist_referrals.sql`
+- Venue QR stickers: `python3 scripts/qr_stickers.py <venue-slug>... --out stickers.pdf`
+- Playbook: `docs/growth/launch-kit.md`

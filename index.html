@@ -2,21 +2,171 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Returning members, installed PWAs, and auth callbacks skip the landing. Runs before paint. -->
+    <script>
+      (function () {
+        try {
+          var l = location, q = new URLSearchParams(l.search)
+          var ref = q.get('ref')
+          if (ref && /^[a-z0-9_-]{4,24}$/i.test(ref)) localStorage.setItem('he_ref', ref.toLowerCase())
+          var utm = q.get('utm_source')
+          if (utm) localStorage.setItem('he_src', utm.replace(/[^a-z0-9_.-]/gi, '').slice(0, 64))
+          if (q.has('home')) return
+          var standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
+          var authCallback = /access_token|refresh_token|type=recovery|error_description/.test(l.hash) || q.has('code')
+          var session = false
+          for (var i = 0; i < localStorage.length; i++) {
+            if (/^sb-.+-auth-token$/.test(localStorage.key(i) || '')) { session = true; break }
+          }
+          if (standalone || authCallback || session) l.replace('/app' + l.search + l.hash)
+        } catch (e) {}
+      })()
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Hole Eaters" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="description" content="Location-based proximity app. Find people nearby." />
+    <meta name="theme-color" content="#090608" />
+    <meta name="color-scheme" content="dark" />
+
+    <title>Hole Eaters — the live cruising map for guys</title>
+    <meta name="description" content="See who's near and who's down, right now. Live map, Pulse Rooms, Ghost Mode. Free, 18+, works in your browser — no download." />
+    <link rel="canonical" href="https://www.hole-eaters.com/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Hole Eaters" />
+    <meta property="og:title" content="Hole Eaters — who's near, who's down" />
+    <meta property="og:description" content="The live cruising map for guys. No download. Open it tonight. 18+." />
+    <meta property="og:url" content="https://www.hole-eaters.com/" />
+    <meta property="og:image" content="https://www.hole-eaters.com/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Hole Eaters — Who's near. Who's down." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Hole Eaters — who's near, who's down" />
+    <meta name="twitter:description" content="The live cruising map for guys. No download. Open it tonight. 18+." />
+    <meta name="twitter:image" content="https://www.hole-eaters.com/og.jpg" />
+    <meta name="rating" content="adult" />
 
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,500..900;1,6..96,400..700&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@500&display=swap" />
+    <link rel="stylesheet" href="/src/landing/landing.css" />
 
-    <title>The Hole Eaters</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Hole Eaters",
+        "url": "https://www.hole-eaters.com/",
+        "applicationCategory": "SocialNetworkingApplication",
+        "operatingSystem": "iOS, Android, Web",
+        "browserRequirements": "Requires a modern mobile browser",
+        "contentRating": "18+",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "description": "The live cruising map for guys. See who's near and who's down, right now."
+      }
+    </script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="top">
+      <a class="top__mark" href="/?home" aria-label="Hole Eaters home">
+        <img src="/brand/emblem.webp" alt="" width="36" height="36" />
+        <span>Hole Eaters</span>
+      </a>
+      <a class="top__cta" href="/app">Open the map</a>
+    </header>
+
+    <main>
+      <section class="hero">
+        <img class="hero__logo" src="/brand/logo.webp" alt="Hole Eaters" width="260" height="320" fetchpriority="high" />
+        <p class="eyebrow reveal" style="--d: 1">After hours &middot; 18+</p>
+        <h1 class="reveal" style="--d: 2">Who&rsquo;s near.<br /><em>Who&rsquo;s down.</em></h1>
+        <p class="hero__lede reveal" style="--d: 3">
+          The live cruising map for guys. See who&rsquo;s around right now, slide into a Pulse Room, or go Ghost and just look.
+        </p>
+        <div class="hero__actions reveal" style="--d: 4">
+          <a class="btn btn--ember" href="/app">Open the map</a>
+          <a class="btn btn--brass" href="#waitlist">Get the app first</a>
+        </div>
+        <p class="hero__fine reveal" style="--d: 5">Free &middot; No download &middot; Works in your browser</p>
+      </section>
+
+      <section class="features" aria-label="What's inside">
+        <article class="card">
+          <span class="card__num">01</span>
+          <h2>The live map</h2>
+          <p>Real GPS, real distance on every pin. Everyone around you, on one screen, right now.</p>
+        </article>
+        <article class="card">
+          <span class="card__num">02</span>
+          <h2>Pulse Rooms</h2>
+          <p>Pop-up rooms for whoever&rsquo;s in range. Open one, see who shows. They vanish when the night does.</p>
+        </article>
+        <article class="card">
+          <span class="card__num">03</span>
+          <h2>Ghost Mode</h2>
+          <p>Browse the map without a pin. Nobody sees you until you decide they should.</p>
+        </article>
+        <article class="card">
+          <span class="card__num">04</span>
+          <h2>Taps, voice &amp; vibes</h2>
+          <p>Send a sticker tap, drop a voice note, check who viewed you, and leave vibe checks after you meet.</p>
+        </article>
+      </section>
+
+      <section class="waitlist" id="waitlist" aria-labelledby="wl-title">
+        <div class="waitlist__frame">
+          <p class="eyebrow">iPhone &amp; Android</p>
+          <h2 id="wl-title">The app is coming.<br /><em>Get in first.</em></h2>
+          <p class="waitlist__lede">Join the list. Invite three guys and you jump to the front of the line.</p>
+
+          <form class="wl-form" id="wl-form" novalidate>
+            <label class="field">
+              <span>Email</span>
+              <input name="email" type="email" inputmode="email" autocomplete="email" required maxlength="254" placeholder="you@example.com" />
+            </label>
+            <label class="field">
+              <span>City</span>
+              <input name="city" type="text" autocomplete="address-level2" maxlength="80" placeholder="Where you cruise" />
+            </label>
+            <fieldset class="seg" aria-label="Phone">
+              <label><input type="radio" name="platform" value="ios" checked /><span>iPhone</span></label>
+              <label><input type="radio" name="platform" value="android" /><span>Android</span></label>
+            </fieldset>
+            <label class="consent">
+              <input type="checkbox" name="adult" required />
+              <span>I&rsquo;m 18 or older.</span>
+            </label>
+            <button class="btn btn--ember btn--block" type="submit">Join the list</button>
+            <p class="wl-error" id="wl-error" role="alert" hidden></p>
+          </form>
+
+          <div class="wl-result" id="wl-result" hidden aria-live="polite">
+            <p class="wl-result__label">You&rsquo;re in line at</p>
+            <p class="wl-result__pos">#<span id="wl-pos">—</span></p>
+            <p class="wl-result__sub" id="wl-sub"></p>
+            <ol class="wl-dots" aria-label="Invites">
+              <li></li><li></li><li></li>
+            </ol>
+            <div class="wl-share">
+              <code id="wl-link"></code>
+              <button class="btn btn--brass" type="button" id="wl-share">Share invite</button>
+            </div>
+            <a class="wl-result__open" href="/app">Or open the map right now &rarr;</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <img src="/brand/emblem.webp" alt="" width="44" height="44" loading="lazy" />
+      <p>Hole Eaters is for adults 18+ only. Be safe, be sure, be kind.</p>
+      <nav><a href="/app">Open the map</a><a href="#waitlist">Waitlist</a></nav>
+    </footer>
+
+    <script type="module" src="/src/landing/landing.ts"></script>
   </body>
 </html>

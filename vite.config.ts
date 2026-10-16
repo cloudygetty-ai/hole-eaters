@@ -8,27 +8,19 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // main.tsx registers the worker for the app only; the landing page stays SW-free and light.
+      injectRegister: false,
       includeAssets: ['icons/*.png', 'brand/*.webp', 'favicon.png'],
-      manifest: {
-        name: 'The Hole Eaters',
-        short_name: 'Hole Eaters',
-        description: 'Location-based proximity app. Find people nearby.',
-        theme_color: '#000000',
-        background_color: '#000000',
-        display: 'standalone',
-        orientation: 'portrait',
-        scope: '/',
-        start_url: '/',
-        icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-        ],
-      },
+      // vite-plugin-pwa 0.21 can't emit the manifest under Rolldown (it was silently missing in prod),
+      // so it ships as a static file in public/ and is linked from both HTML entries.
+      manifest: false,
       workbox: {
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
         importScripts: ['/sw-push.js'],
+        // App routes get the app shell offline; the landing (/) is served from its own precached HTML.
+        navigateFallback: '/app.html',
+        navigateFallbackAllowlist: [/^\/app(\/|$)/],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/xebwdvtaivqjwbwbzdpv\.supabase\.co\/.*/i,
@@ -46,6 +38,14 @@ export default defineConfig({
   ],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        landing: path.resolve(__dirname, 'index.html'),
+        app: path.resolve(__dirname, 'app.html'),
+      },
+    },
   },
   optimizeDeps: {
     exclude: ['mapbox-gl'],

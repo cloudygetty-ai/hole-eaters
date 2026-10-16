@@ -7,3 +7,4 @@ bundle.html
 .env.*
 .parcel-cache/
 *.mdb
+__pycache__/
