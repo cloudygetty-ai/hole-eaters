@@ -80,5 +80,11 @@
     "vite": "^8.0.10",
     "vite-plugin-pwa": "^0.21.0",
     "workbox-window": "^7.4.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "serialize-javascript": ">=7.0.5",
+      "postcss-selector-parser": "^7.1.6"
+    }
   }
 }
