@@ -5,6 +5,9 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppNotification } from './lib/push'
 import { supabase, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, submitVibeCheck, getMyVibeCheckFor, getVibeSummary } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage, VibeSummary } from './lib/supabase'
+import { claimStoredReferral } from './lib/referrals'
+import { presenceLabel } from './lib/presenceLabel'
+import { InviteBanner } from './components/InviteBanner'
 import type { User } from '@supabase/supabase-js'
 import { CoverBanner } from './components/CoverBanner'
 import { StickerPicker } from './components/StickerPicker'
@@ -2021,7 +2024,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
           <MyPin profile={myProfile} pos={myPos} onMove={onMovePin} isGhost={isGhost} />
           <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, transform: 'translate(-50%,-50%)', width: 120, height: 120, borderRadius: '50%', border: `1px solid ${isGhost ? C.ghost + '20' : C.accent + '30'}`, pointerEvents: 'none', zIndex: 5 }} />
           <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, transform: 'translate(-50%,-50%)', width: 200, height: 200, borderRadius: '50%', border: `1px solid ${isGhost ? C.ghost + '10' : C.accent + '15'}`, pointerEvents: 'none', zIndex: 5 }} />
-          <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', border: `1px solid ${C.border2}`, borderRadius: 20, padding: '5px 12px', fontSize: 11, color: C.green, fontFamily: FONT, zIndex: 30 }}>● {onlineCount} online</div>
+          <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', border: `1px solid ${C.border2}`, borderRadius: 20, padding: '5px 12px', fontSize: 11, color: C.green, fontFamily: FONT, zIndex: 30 }}>● {presenceLabel(onlineCount)}</div>
           {!isGhost && <button onClick={onCreatePulseRoom} style={{ position: 'absolute', bottom: 'calc(76px + env(safe-area-inset-bottom))', right: 14, background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`, border: 'none', borderRadius: 16, padding: '10px 16px', color: '#fff', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, boxShadow: `0 4px 20px ${C.accent}44`, zIndex: 30 }}><span style={{ fontSize: 16 }}>📡</span> Start Pulse Room</button>}
         </div>
       </div>
@@ -2038,7 +2041,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
 
       {/* Top-right: online count */}
       <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(10px)', border: `1px solid ${C.border2}`, borderRadius: 20, padding: '5px 12px', fontSize: 11, color: C.green, fontFamily: FONT, zIndex: 30 }}>
-        ● {onlineCount} online
+        ● {presenceLabel(onlineCount)}
       </div>
 
       {/* Street / 3D view toggle */}
@@ -2199,7 +2202,7 @@ function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boole
               WHORE-IZON
             </div>
             <div style={{ fontSize: 10, color: WH.muted, marginTop: 3, letterSpacing: 1, fontFamily: FONT }}>
-              THE OPEN HORIZON · {onlineCount} LIVE {isGhost && <span style={{ color: C.ghost }}>· 👻 GHOST</span>}
+              THE OPEN HORIZON · {presenceLabel(onlineCount, 'LIVE')} {isGhost && <span style={{ color: C.ghost }}>· 👻 GHOST</span>}
             </div>
           </div>
 
@@ -2849,40 +2852,6 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
   )
 }
 
-// ─── Invite Screen ─────────────────────────────────────────────────────────────
-function InviteBanner({ myProfile }: { myProfile: Partial<Profile> | null }) {
-  const [copied, setCopied] = useState(false)
-  const inviteUrl = `${window.location.origin}?invite=1`
-
-  const share = async () => {
-    const text = `${myProfile?.name ?? 'Someone'} invited you to Hole Eaters — the location-based cruising app ${inviteUrl}`
-    if (navigator.share) {
-      await navigator.share({ title: 'Join Hole Eaters', text, url: inviteUrl }).catch(() => {})
-    } else {
-      await navigator.clipboard.writeText(text).catch(() => {})
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
-  }
-
-  return (
-    <div style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 16, padding: 16, margin: '0 0 16px' }}>
-      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>🔗 Invite Friends</div>
-      <div style={{ fontSize: 12, color: C.dim, marginBottom: 12, lineHeight: 1.5 }}>
-        More people nearby = more matches. Share your invite link.
-      </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <div style={{ flex: 1, background: C.surf3, borderRadius: 8, padding: '8px 12px', fontSize: 11, color: C.dim, fontFamily: FONT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {inviteUrl}
-        </div>
-        <button onClick={share} style={{ padding: '8px 16px', borderRadius: 8, background: C.accent, color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
-          {copied ? '✓ Copied' : 'Share'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
 // ─── Version / Changelog ───────────────────────────────────────────────────────
 function VersionScreen({ onClose }: { onClose: () => void }) {
   return (
@@ -3473,6 +3442,7 @@ export default function App() {
     setMyProfile(data)
     localStorage.setItem('he_local_profile', JSON.stringify(data))
     localStorage.setItem('he_profile_user_id', currentUser.id)
+    claimStoredReferral().catch(() => {})
     return null
   }
 
@@ -3695,7 +3665,7 @@ export default function App() {
               </div>
 
               {/* Invite */}
-              <InviteBanner myProfile={myProfile} />
+              <InviteBanner name={myProfile?.name} theme={{ surf2: C.surf2, surf3: C.surf3, border: C.border, accent: C.accent, dim: C.dim, font: FONT }} />
 
               {/* GPS Status */}
               <div style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
