@@ -1,7 +1,8 @@
 // ─── Web Push subscription manager ────────────────────────────────────────────
 
 // VAPID public key — matches the private key used by your push server
-export const VAPID_PUBLIC_KEY = 'BP25nQJKg6O21BYOXcxdfLHnYb_i_HXFheu3bjNRcEcV6OqV4tGcqPlzf9_Oxnyu53qWuBQzuA6UBp09C9PTY1w'
+// Private half lives in the Supabase vault (vapid_private_key), used by the `notify` edge function.
+export const VAPID_PUBLIC_KEY = 'BIl5XZYSLrhpeqrb-kVlc4BuE6Mz7olBxOPJNU6Wk4iFo5O5e_hnQTCXnVLr3ZQnaDbxZrbq0CtZ7pb1HMTfTWM'
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -33,7 +34,14 @@ export async function subscribeToPush(): Promise<PushSubscription | null> {
   try {
     const reg = await navigator.serviceWorker.ready
     const existing = await reg.pushManager.getSubscription()
-    if (existing) return existing
+    if (existing) {
+      // Subscriptions made with the old key can't receive our pushes; replace them
+      const current = existing.options.applicationServerKey
+      const wanted = urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      const same = current && new Uint8Array(current).every((b, i) => b === wanted[i]) && current.byteLength === wanted.length
+      if (same) return existing
+      await existing.unsubscribe()
+    }
 
     return await reg.pushManager.subscribe({
       userVisibleOnly: true,
@@ -90,4 +98,11 @@ export async function notify(title: string, body: string, tag: string, url = '/'
   } else {
     await showLocalNotification(title, body, tag, url)
   }
+}
+
+// ─── iOS only delivers web push to apps added to the Home Screen ──────────
+export function isIosBrowserTab(): boolean {
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true
+  return ios && !standalone
 }

@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import mapboxgl from "mapbox-gl";
 import { ArrowUp, ChevronDown, Video, VideoOff } from 'lucide-react'
 import "mapbox-gl/dist/mapbox-gl.css";
-import { pushSupported, requestPushPermission, subscribeToPush, notify, onInAppNotification } from './lib/push'
-import { supabase, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, submitVibeCheck, getMyVibeCheckFor, getVibeSummary } from './lib/supabase'
+import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
+import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, submitVibeCheck, getMyVibeCheckFor, getVibeSummary } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage, VibeSummary } from './lib/supabase'
 import { claimStoredReferral } from './lib/referrals'
 import { presenceLabel } from './lib/presenceLabel'
@@ -2398,13 +2398,12 @@ function InAppToastContainer() {
 }
 
 // ─── Push Permission Prompt ────────────────────────────────────────────────────
-function PushPermissionPrompt({ onDone }: { onDone: () => void }) {
+function PushPermissionPrompt({ onEnable, onDone }: { onEnable: () => Promise<unknown>; onDone: () => void }) {
   const [requesting, setRequesting] = useState(false)
 
   const request = async () => {
     setRequesting(true)
-    const perm = await requestPushPermission()
-    if (perm === 'granted') await subscribeToPush()
+    await onEnable()
     onDone()
   }
 
@@ -2415,7 +2414,7 @@ function PushPermissionPrompt({ onDone }: { onDone: () => void }) {
           <div style={{ fontSize: 28, lineHeight: 1 }}>🔔</div>
           <div>
             <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Stay in the loop</div>
-            <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.5 }}>Get notified when you match or someone messages you.</div>
+            <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.5 }}>Get notified when someone likes you, taps you or sends a message.</div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -3045,7 +3044,11 @@ export default function App() {
   const [nearby, setNearby] = useState<(Profile & { isSeed?: boolean })[]>(SEEDS)
   const [nearbyLoading, setNearbyLoading] = useState(true)
   const [myPos, setMyPos] = useState({ x: 50, y: 50 })
-  const [screen, setScreen] = useState<Screen>('map')
+  const [screen, setScreen] = useState<Screen>(() => {
+    // Notification taps open /?tab=inbox or /?tab=me
+    const tab = new URLSearchParams(window.location.search).get('tab')
+    return tab === 'inbox' ? 'matches' : tab === 'me' ? 'profile' : 'map'
+  })
   const [selectedUser, setSelectedUser] = useState<(Profile & { isSeed?: boolean }) | null>(null)
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null)
   const [passedIds, setPassedIds] = useState<Set<string>>(() => {
@@ -3117,6 +3120,46 @@ export default function App() {
     checkIsAdmin().then(({ data }) => { if (data) setIsAdmin(true) })
   }, [user])
 
+  // ── Push notifications: one saved subscription per device ──
+  type PushState = 'on' | 'off' | 'blocked' | 'unsupported' | 'ios-install'
+  const readPushState = (): PushState =>
+    isIosBrowserTab() ? 'ios-install'
+    : !pushSupported() ? 'unsupported'
+    : Notification.permission === 'denied' ? 'blocked'
+    : Notification.permission === 'granted' ? 'on' : 'off'
+  const [pushState, setPushState] = useState<PushState>(readPushState)
+
+  const enablePush = useCallback(async () => {
+    if (!user) return
+    const perm = await requestPushPermission()
+    if (perm === 'granted') {
+      const sub = await subscribeToPush()
+      if (sub) {
+        const { error } = await savePushSubscription(user.id, sub)
+        if (error) { console.error('[push] save failed', error); showError("Notifications couldn't be turned on. Try again.") }
+      } else showError("Notifications couldn't be turned on on this device.")
+    }
+    setPushState(readPushState())
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
+
+  const disablePush = useCallback(async () => {
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      if (sub) await deletePushSubscription(sub.endpoint)
+      await unsubscribeFromPush()
+    } catch (e) { console.error('[push] disable failed', e) }
+    setPushState('off')
+  }, [])
+
+  // Re-save this device's subscription on every launch (keys rotate, devices change, old-key subs get replaced)
+  useEffect(() => {
+    if (!user || readPushState() !== 'on') return
+    subscribeToPush().then(sub => { if (sub) savePushSubscription(user.id, sub).then(({ error }) => error && console.error('[push] resave failed', error)) })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
+
   // Show push permission prompt once after onboarding/profile load
   useEffect(() => {
     if (!user || !myProfile?.name) return
@@ -3139,17 +3182,20 @@ export default function App() {
     // Fetch initial unread counts
     getUnreadCounts(user.id).then(setUnreadCounts)
 
-    // New match notification
-    const matchSub = supabase.channel(`matches_notify_${user.id}`)
+    // New like notification
+    const likeSub = supabase.channel(`likes_notify_${user.id}`)
       .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'matches',
-        filter: `user_b=eq.${user.id}`,
+        event: 'INSERT', schema: 'public', table: 'likes',
+        filter: `to_user=eq.${user.id}`,
       }, async (payload) => {
-        const matcherId = payload.new.user_a
-        const { data } = await supabase.from('profiles').select('name,emoji').eq('id', matcherId).single()
+        const likerId = payload.new.from_user as string
+        const [{ data }, { data: mine }] = await Promise.all([
+          supabase.from('profiles').select('name').eq('id', likerId).single(),
+          supabase.from('likes').select('from_user').eq('from_user', user.id).eq('to_user', likerId).maybeSingle(),
+        ])
         const name = data?.name ?? 'Someone'
-        const emoji = data?.emoji ?? '🔥'
-        notify(`${emoji} New Match!`, `You and ${name} matched`, 'match', '/')
+        if (mine) notify("🔥 It's a match!", `You and ${name} liked each other. Say hi.`, `like-${likerId}`, '/app?tab=inbox')
+        else notify('🔥 New like', `${name} liked you`, `like-${likerId}`, '/app?tab=inbox')
       })
       .subscribe()
 
@@ -3168,14 +3214,15 @@ export default function App() {
         const { data } = await supabase.from('profiles').select('name,emoji').eq('id', senderId).single()
         const name = data?.name ?? 'Someone'
         const emoji = data?.emoji ?? '💬'
-        notify(`${emoji} ${name}`, msg.content?.slice(0, 80) ?? 'Sent you a message', `msg_${msg.match_id}`, '/')
+        const isSticker = typeof msg.media_url === 'string' && msg.media_url.startsWith('/stickers/') && !msg.content
+        notify(`${emoji} ${name}`, isSticker ? 'Sent you a 🍑 tap' : msg.content?.slice(0, 80) || 'Sent you a message', `msg_${msg.match_id}`, '/app?tab=inbox')
         // Update unread count
         setUnreadCounts(prev => ({ ...prev, [msg.match_id]: (prev[msg.match_id] ?? 0) + 1 }))
       })
       .subscribe()
 
     return () => {
-      supabase.removeChannel(matchSub)
+      supabase.removeChannel(likeSub)
       supabase.removeChannel(msgSub)
     }
   }, [user])
@@ -3639,6 +3686,26 @@ export default function App() {
             </div>
 
             <div style={{ padding: '0 16px 32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Notifications */}
+              <div style={{ background: C.surf2, border: `1px solid ${pushState === 'on' ? C.accent + '33' : C.border}`, borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 22 }}>🔔</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>Notifications</div>
+                  <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
+                    {pushState === 'on' ? 'Likes, taps, messages and views'
+                      : pushState === 'blocked' ? 'Blocked. Allow notifications for this site in your browser settings.'
+                      : pushState === 'ios-install' ? 'On iPhone: tap Share, then Add to Home Screen, and open the app from there.'
+                      : pushState === 'unsupported' ? "This browser doesn't support notifications."
+                      : 'Get pinged for likes, taps and messages'}
+                  </div>
+                </div>
+                {(pushState === 'on' || pushState === 'off') && (
+                  <button aria-label={pushState === 'on' ? 'Turn off notifications' : 'Turn on notifications'} aria-pressed={pushState === 'on'} onClick={() => pushState === 'on' ? disablePush() : enablePush()} style={{ width: 44, height: 24, borderRadius: 12, background: pushState === 'on' ? C.accent : C.surf3, border: `1px solid ${pushState === 'on' ? C.accent : C.border2}`, position: 'relative', flexShrink: 0 }}>
+                    <div style={{ position: 'absolute', top: 2, left: pushState === 'on' ? 22 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
+                  </button>
+                )}
+              </div>
+
               {/* Ghost Mode */}
               <div style={{ background: isGhost ? 'rgba(100,255,218,0.06)' : C.surf2, border: `1px solid ${isGhost ? C.ghost + '33' : C.border}`, borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span style={{ fontSize: 22 }}>👻</span>
@@ -3841,7 +3908,7 @@ export default function App() {
       )}
 
       {/* Push permission prompt */}
-      {showPushPrompt && <PushPermissionPrompt onDone={() => setShowPushPrompt(false)} />}
+      {showPushPrompt && <PushPermissionPrompt onEnable={enablePush} onDone={() => setShowPushPrompt(false)} />}
 
       {/* PWA Install */}
       <InstallBanner />

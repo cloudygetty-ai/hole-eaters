@@ -416,3 +416,17 @@ export function subscribeToGlobalChat(cb: (msg: GlobalMessage) => void) {
     })
     .subscribe()
 }
+
+// ─── Push subscriptions (one row per device) ─────────────────────────────────
+export async function savePushSubscription(userId: string, sub: PushSubscription) {
+  const j = sub.toJSON()
+  if (!j.endpoint || !j.keys?.p256dh || !j.keys?.auth) return { error: new Error('incomplete subscription') }
+  return supabase.from('push_subscriptions').upsert(
+    { user_id: userId, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth },
+    { onConflict: 'endpoint' },
+  )
+}
+
+export async function deletePushSubscription(endpoint: string) {
+  return supabase.from('push_subscriptions').delete().eq('endpoint', endpoint)
+}
