@@ -14,6 +14,8 @@ import { StickerPicker } from './components/StickerPicker'
 import { isStickerUrl } from './lib/stickers'
 import { ProfileDetailsFields, ProfileDetailsView, type DetailsTheme } from './components/ProfileDetails'
 import type { ProfileDetails } from './lib/profileDetails'
+import { VideoFeed, type VideoTheme } from './components/VideoFeed'
+import { VideoModeration } from './components/VideoModeration'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -25,6 +27,7 @@ const C = {
 }
 const DT: DetailsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim }
 const FONT = "'DM Mono', 'Fira Code', monospace"
+const VT: VideoTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, dim: C.dim, muted: C.muted, accent: C.accent, font: FONT }
 const APP_VERSION = '1.0.0'
 const CHANGELOG: { v: string; date: string; items: string[] }[] = [
   { v: '1.0.0', date: '2026', items: [
@@ -2702,7 +2705,7 @@ function OfflineBanner() {
 
 // ─── Admin Dashboard ──────────────────────────────────────────────────────────
 function AdminDashboard({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<'stats' | 'reports' | 'users' | 'bans'>('stats')
+  const [tab, setTab] = useState<'stats' | 'reports' | 'videos' | 'users' | 'bans'>('stats')
   const [stats, setStats] = useState<any>(null)
   const [reports, setReports] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
@@ -2743,6 +2746,7 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
   const TABS = [
     { id: 'stats', label: '📊 Stats' },
     { id: 'reports', label: `🚨 Reports${reports.length ? ` (${reports.length})` : ''}` },
+    { id: 'videos', label: '🎬 Videos' },
     { id: 'users', label: '👥 Users' },
     { id: 'bans', label: '🚫 Bans' },
   ] as const
@@ -2815,6 +2819,8 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
         )}
 
         {/* Users */}
+        {!loading && tab === 'videos' && <VideoModeration theme={VT} />}
+
         {!loading && tab === 'users' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {users.map((u: any) => (
@@ -3032,7 +3038,7 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
 }
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
-type Screen = 'map' | 'list' | 'matches' | 'global' | 'profile'
+type Screen = 'map' | 'list' | 'videos' | 'matches' | 'global' | 'profile'
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -3047,7 +3053,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>(() => {
     // Notification taps open /?tab=inbox or /?tab=me
     const tab = new URLSearchParams(window.location.search).get('tab')
-    return tab === 'inbox' ? 'matches' : tab === 'me' ? 'profile' : 'map'
+    return tab === 'inbox' ? 'matches' : tab === 'me' ? 'profile' : tab === 'videos' ? 'videos' : 'map'
   })
   const [selectedUser, setSelectedUser] = useState<(Profile & { isSeed?: boolean }) | null>(null)
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null)
@@ -3573,7 +3579,7 @@ export default function App() {
       {isGhost && <GhostBanner onDisable={() => setIsGhost(false)} />}
 
       {/* Main */}
-      <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' || screen === 'videos' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {screen === 'map' && (
           <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} gpsCoords={gpsCoords} isPremium={IS_PREMIUM} />
         )}
@@ -3651,6 +3657,9 @@ export default function App() {
         })()}
         {screen === 'matches' && user && (
           <MatchesScreen userId={user.id} onOpenProfile={(p) => setSelectedUser(p)} onOpenChat={(match, other) => setActiveMatch({ match, other })} onClearUnread={(id) => setUnreadCounts(prev => { const n = {...prev}; delete n[id]; return n })} />
+        )}
+        {screen === 'videos' && (
+          <VideoFeed theme={VT} canPost={!!user} />
         )}
         {screen === 'global' && (
           <GlobalChat userId={user?.id ?? null} isGhost={isGhost} />
@@ -3782,6 +3791,7 @@ export default function App() {
         {([
           { id: 'map', label: 'Map', icon: '📍' },
           { id: 'list', label: 'Nearby', icon: '👥' },
+          { id: 'videos', label: 'Videos', icon: '🎬' },
           { id: 'global', label: 'Whore-izon', icon: '🔥' },
           { id: 'matches', label: 'Inbox', icon: '💬', badge: totalUnread > 0 ? totalUnread : 0 },
           { id: 'profile', label: 'Me', icon: '👤' },
