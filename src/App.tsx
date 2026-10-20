@@ -7,6 +7,7 @@ import { supabase, savePushSubscription, deletePushSubscription, getLikesReceive
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage, VibeSummary } from './lib/supabase'
 import { claimStoredReferral } from './lib/referrals'
 import { presenceLabel } from './lib/presenceLabel'
+import { registerWebPush, startPresence, unregisterWebPush, useOnlineIds } from './lib/citadel'
 import { InviteBanner } from './components/InviteBanner'
 import type { User } from '@supabase/supabase-js'
 import { CoverBanner } from './components/CoverBanner'
@@ -2122,10 +2123,12 @@ const WH_CSS = `
 
 // ─── Whore-izon Global Chat ───────────────────────────────────────────────────
 function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boolean }) {
+  const onlineIds = useOnlineIds()
   const [messages, setMessages] = useState<GlobalMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [onlineCount, setOnlineCount] = useState(0)
+  const liveCount = onlineIds ? onlineIds.size : onlineCount
   const [inputFocused, setInputFocused] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -2205,7 +2208,7 @@ function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boole
               WHORE-IZON
             </div>
             <div style={{ fontSize: 10, color: WH.muted, marginTop: 3, letterSpacing: 1, fontFamily: FONT }}>
-              THE OPEN HORIZON · {presenceLabel(onlineCount, 'LIVE')} {isGhost && <span style={{ color: C.ghost }}>· 👻 GHOST</span>}
+              THE OPEN HORIZON · {presenceLabel(liveCount, 'LIVE')} {isGhost && <span style={{ color: C.ghost }}>· 👻 GHOST</span>}
             </div>
           </div>
 
@@ -3066,9 +3069,13 @@ export default function App() {
   // Derived: seeds always visible, real users filtered by blocklist.
   // Must sit below passedIds/blockedIds (reading them earlier crashed the app
   // as soon as real users loaded); memoized so map pins aren't rebuilt per render.
+  // Live presence (Citadel) overrides the sticky profiles.online flag; null = Citadel off → keep the flag.
+  const onlineIds = useOnlineIds()
   const visibleNearby = useMemo(
-    () => nearby.filter(u => (u as any).isSeed || (!blockedIds.has(u.id) && !passedIds.has(u.id))),
-    [nearby, blockedIds, passedIds],
+    () => nearby
+      .filter(u => (u as any).isSeed || (!blockedIds.has(u.id) && !passedIds.has(u.id)))
+      .map(u => onlineIds && !(u as any).isSeed ? { ...u, online: onlineIds.has(u.id) } : u),
+    [nearby, blockedIds, passedIds, onlineIds],
   )
 
   const handleBlock = (id: string) => {
@@ -3143,6 +3150,7 @@ export default function App() {
       if (sub) {
         const { error } = await savePushSubscription(user.id, sub)
         if (error) { console.error('[push] save failed', error); showError("Notifications couldn't be turned on. Try again.") }
+        void registerWebPush(sub)
       } else showError("Notifications couldn't be turned on on this device.")
     }
     setPushState(readPushState())
@@ -3153,7 +3161,7 @@ export default function App() {
     try {
       const reg = await navigator.serviceWorker.ready
       const sub = await reg.pushManager.getSubscription()
-      if (sub) await deletePushSubscription(sub.endpoint)
+      if (sub) await Promise.all([deletePushSubscription(sub.endpoint), unregisterWebPush(sub)])
       await unsubscribeFromPush()
     } catch (e) { console.error('[push] disable failed', e) }
     setPushState('off')
@@ -3162,7 +3170,11 @@ export default function App() {
   // Re-save this device's subscription on every launch (keys rotate, devices change, old-key subs get replaced)
   useEffect(() => {
     if (!user || readPushState() !== 'on') return
-    subscribeToPush().then(sub => { if (sub) savePushSubscription(user.id, sub).then(({ error }) => error && console.error('[push] resave failed', error)) })
+    subscribeToPush().then(sub => {
+      if (!sub) return
+      savePushSubscription(user.id, sub).then(({ error }) => error && console.error('[push] resave failed', error))
+      void registerWebPush(sub)
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
@@ -3238,6 +3250,12 @@ export default function App() {
 
   // ── Ghost Mode ──
   const [isGhost, setIsGhost] = useState(false)
+
+  // Join live presence while signed in; ghosts watch without being counted
+  useEffect(() => {
+    if (!user) return
+    return startPresence(!isGhost)
+  }, [user, isGhost])
 
   // ── Pulse Rooms (localStorage-backed, ephemeral) ──
   const [pulseRooms, setPulseRooms] = useState<PulseRoom[]>(() => {
