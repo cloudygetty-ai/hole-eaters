@@ -930,9 +930,12 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
       mergeMessages([msg])
       if (msg.sender_id !== myId) markMessagesRead(match.id, myId).catch(() => {})
     })
-    // Fallback when realtime isn't enabled for the messages table
-    const poll = setInterval(load, 4000)
-    return () => { clearInterval(poll); supabase.removeChannel(sub) }
+    // messages is in the realtime publication; this only backstops dropped sockets
+    // (was a 4s poll per open chat). Refetch immediately when the tab comes back.
+    const poll = setInterval(load, 30_000)
+    const onVisible = () => { if (document.visibilityState === 'visible') load() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { clearInterval(poll); document.removeEventListener('visibilitychange', onVisible); supabase.removeChannel(sub) }
   }, [match.id, myId, mergeMessages])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
@@ -3469,10 +3472,21 @@ export default function App() {
       enableHighAccuracy: true, maximumAge: 30000, timeout: 10000,
     })
 
-    // Mark online, mark offline on unmount
-    setOnline(user.id, true).catch(() => {})
+    // Online = heartbeat while visible. Unmount cleanup alone never runs when a tab is closed or a
+    // phone kills the app, which left profiles stuck "online"; the pg_cron sweep
+    // (sweep_stale_online) is the authoritative expiry, these writes just keep it fresh.
+    const markOnline = () => { if (document.visibilityState === 'visible') setOnline(user.id, true).catch(() => {}) }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') markOnline()
+      else setOnline(user.id, false).catch(() => {})
+    }
+    markOnline()
+    const heartbeat = setInterval(markOnline, 60_000)
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
       navigator.geolocation.clearWatch(watchId)
+      clearInterval(heartbeat)
+      document.removeEventListener('visibilitychange', onVisibility)
       setOnline(user.id, false).catch(() => {})
     }
   }, [user])
