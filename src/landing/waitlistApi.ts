@@ -1,4 +1,5 @@
 // Waitlist contract — mirrors public.join_waitlist / public.waitlist_status in Supabase.
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/supabasePublic'
 
 export interface WaitlistStatus {
   code: string
@@ -23,8 +24,8 @@ export interface JoinRequest {
   source: string
 }
 
-const URL_BASE = import.meta.env.VITE_SUPABASE_URL as string
-const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+const URL_BASE = SUPABASE_URL
+const ANON_KEY = SUPABASE_ANON_KEY
 
 async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T | null> {
   try {
