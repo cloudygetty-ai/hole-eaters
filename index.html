@@ -60,7 +60,7 @@
         "name": "Hole Eaters",
         "url": "https://www.hole-eaters.com/",
         "applicationCategory": "SocialNetworkingApplication",
-        "operatingSystem": "iOS, Android, Web",
+        "operatingSystem": "Web (iPhone, Android and desktop browsers)",
         "browserRequirements": "Requires a modern mobile browser",
         "contentRating": "18+",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -89,7 +89,7 @@
         </p>
         <div class="hero__actions reveal" style="--d: 4">
           <a class="btn btn--ember" href="/app">Open the map</a>
-          <a class="btn btn--brass" href="#waitlist">Get the app first</a>
+          <a class="btn btn--brass" href="#install">Add to Home Screen</a>
         </div>
         <p class="hero__fine reveal" style="--d: 5">Free &middot; No download &middot; Works in your browser</p>
       </section>
@@ -117,46 +117,32 @@
         </article>
       </section>
 
-      <section class="waitlist" id="waitlist" aria-labelledby="wl-title">
+      <section class="waitlist install" id="install" aria-labelledby="in-title">
         <div class="waitlist__frame">
-          <p class="eyebrow">iPhone &amp; Android</p>
-          <h2 id="wl-title">The app is coming.<br /><em>Get in first.</em></h2>
-          <p class="waitlist__lede">Join the list. Invite three guys and you jump to the front of the line.</p>
+          <p class="eyebrow">No app store needed</p>
+          <h2 id="in-title">It&rsquo;s already an app.<br /><em>Put it on your Home Screen.</em></h2>
+          <p class="waitlist__lede">Add Hole Eaters to your Home Screen and it opens full screen, like any app, and pings you when someone likes you, taps you or messages you.</p>
 
-          <form class="wl-form" id="wl-form" novalidate>
-            <label class="field">
-              <span>Email</span>
-              <input name="email" type="email" inputmode="email" autocomplete="email" required maxlength="254" placeholder="you@example.com" />
-            </label>
-            <label class="field">
-              <span>City</span>
-              <input name="city" type="text" autocomplete="address-level2" maxlength="80" placeholder="Where you cruise" />
-            </label>
-            <fieldset class="seg" aria-label="Phone">
-              <label><input type="radio" name="platform" value="ios" checked /><span>iPhone</span></label>
-              <label><input type="radio" name="platform" value="android" /><span>Android</span></label>
-            </fieldset>
-            <label class="consent">
-              <input type="checkbox" name="adult" required />
-              <span>I&rsquo;m 18 or older.</span>
-            </label>
-            <button class="btn btn--ember btn--block" type="submit">Join the list</button>
-            <p class="wl-error" id="wl-error" role="alert" hidden></p>
-          </form>
+          <fieldset class="seg" aria-label="Your phone">
+            <label><input type="radio" name="phone" value="ios" checked /><span>iPhone</span></label>
+            <label><input type="radio" name="phone" value="android" /><span>Android</span></label>
+          </fieldset>
 
-          <div class="wl-result" id="wl-result" hidden aria-live="polite">
-            <p class="wl-result__label">You&rsquo;re in line at</p>
-            <p class="wl-result__pos">#<span id="wl-pos">—</span></p>
-            <p class="wl-result__sub" id="wl-sub"></p>
-            <ol class="wl-dots" aria-label="Invites">
-              <li></li><li></li><li></li>
-            </ol>
-            <div class="wl-share">
-              <code id="wl-link"></code>
-              <button class="btn btn--brass" type="button" id="wl-share">Share invite</button>
-            </div>
-            <a class="wl-result__open" href="/app">Or open the map right now &rarr;</a>
-          </div>
+          <ol class="steps" data-phone="ios">
+            <li><b>Open hole-eaters.com in Safari.</b> Not inside Instagram, Grindr or another app.</li>
+            <li><b>Tap Share</b> <span class="glyph" aria-hidden="true">&#x2B06;&#xFE0E;</span>, the square with an arrow at the bottom of the screen.</li>
+            <li><b>Choose &ldquo;Add to Home Screen&rdquo;.</b> Scroll down the menu if you don&rsquo;t see it.</li>
+            <li><b>Open it from your Home Screen</b>, then turn on notifications in <b>Me</b>.</li>
+          </ol>
+          <ol class="steps" data-phone="android" hidden>
+            <li><b>Open hole-eaters.com in Chrome.</b></li>
+            <li><b>Tap the &#8942; menu</b> in the top-right corner.</li>
+            <li><b>Choose &ldquo;Install app&rdquo;</b> or &ldquo;Add to Home screen&rdquo;.</li>
+            <li><b>Open it from your Home Screen</b> and turn on notifications in <b>Me</b>.</li>
+          </ol>
+
+          <a class="btn btn--ember btn--block" href="/app">Open the map</a>
+          <p class="install__done" id="install-done" hidden>You&rsquo;re already using the Home Screen app.</p>
         </div>
       </section>
     </main>
@@ -164,7 +150,7 @@
     <footer class="foot">
       <img src="/brand/emblem.webp" alt="" width="44" height="44" loading="lazy" />
       <p>Hole Eaters is for adults 18+ only. Be safe, be sure, be kind.</p>
-      <nav><a href="/app">Open the map</a><a href="#waitlist">Waitlist</a></nav>
+      <nav><a href="/app">Open the map</a><a href="#install">Add to Home Screen</a></nav>
     </footer>
 
     <script type="module" src="/src/landing/landing.ts"></script>

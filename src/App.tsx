@@ -11,6 +11,7 @@ import { registerWebPush, startPresence, unregisterWebPush, useOnlineIds } from 
 import { InviteBanner } from './components/InviteBanner'
 import type { User } from '@supabase/supabase-js'
 import { CoverBanner } from './components/CoverBanner'
+import { InstallPrompt } from './components/InstallPrompt'
 import { StickerPicker } from './components/StickerPicker'
 import { isStickerUrl } from './lib/stickers'
 import { ProfileDetailsFields, ProfileDetailsView, type DetailsTheme } from './components/ProfileDetails'
@@ -3120,6 +3121,7 @@ export default function App() {
   const [activeSeedChat, setActiveSeedChat] = useState<SeedWithAI | null>(null)
   const [editingProfile, setEditingProfile] = useState(false)
   const [showPushPrompt, setShowPushPrompt] = useState(false)
+  const [showInstall, setShowInstall] = useState(false)
   const [showAuth, setShowAuth] = useState(false)
   const [showViewed, setShowViewed] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
@@ -3735,11 +3737,14 @@ export default function App() {
                   <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
                     {pushState === 'on' ? 'Likes, taps, messages and views'
                       : pushState === 'blocked' ? 'Blocked. Allow notifications for this site in your browser settings.'
-                      : pushState === 'ios-install' ? 'On iPhone: tap Share, then Add to Home Screen, and open the app from there.'
+                      : pushState === 'ios-install' ? 'Add Hole Eaters to your Home Screen first, then turn this on.'
                       : pushState === 'unsupported' ? "This browser doesn't support notifications."
                       : 'Get pinged for likes, taps and messages'}
                   </div>
                 </div>
+                {pushState === 'ios-install' && (
+                  <button onClick={() => setShowInstall(true)} style={{ padding: '8px 12px', borderRadius: 10, background: C.accent, color: '#fff', fontWeight: 700, fontSize: 12, flexShrink: 0 }}>Show me how</button>
+                )}
                 {(pushState === 'on' || pushState === 'off') && (
                   <button aria-label={pushState === 'on' ? 'Turn off notifications' : 'Turn on notifications'} aria-pressed={pushState === 'on'} onClick={() => pushState === 'on' ? disablePush() : enablePush()} style={{ width: 44, height: 24, borderRadius: 12, background: pushState === 'on' ? C.accent : C.surf3, border: `1px solid ${pushState === 'on' ? C.accent : C.border2}`, position: 'relative', flexShrink: 0 }}>
                     <div style={{ position: 'absolute', top: 2, left: pushState === 'on' ? 22 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
@@ -3953,31 +3958,9 @@ export default function App() {
       {showPushPrompt && <PushPermissionPrompt onEnable={enablePush} onDone={() => setShowPushPrompt(false)} />}
 
       {/* PWA Install */}
-      <InstallBanner />
+      <InstallPrompt theme={{ accent: C.accent, surface: C.surface, surf3: C.surf3, border: C.border2, text: C.text, muted: C.muted, dim: C.dim }} open={showInstall} onClose={() => setShowInstall(false)} />
     </div>
   )
 }
 
 // ─── PWA Install Banner ───────────────────────────────────────────────────────
-function InstallBanner() {
-  const [prompt, setPrompt] = useState<any>(null)
-  const [show, setShow] = useState(false)
-  const [dismissed] = useState(() => localStorage.getItem('pwa_dismissed') === '1')
-
-  useEffect(() => {
-    const handler = (e: any) => { e.preventDefault(); setPrompt(e); setShow(true) }
-    window.addEventListener('beforeinstallprompt', handler)
-    return () => window.removeEventListener('beforeinstallprompt', handler)
-  }, [])
-
-  if (!show || dismissed) return null
-
-  return (
-    <div style={{ position: 'fixed', bottom: 76, left: 12, right: 12, zIndex: 300, background: C.surf3, border: `1px solid rgba(255,77,109,0.3)`, borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.5)', animation: 'slideUp 0.3s ease' }}>
-      <div style={{ fontSize: 28 }}>📍</div>
-      <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 14 }}>Add to Home Screen</div><div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Install for the full experience</div></div>
-      <button onClick={async () => { prompt?.prompt(); const { outcome } = await prompt.userChoice; if (outcome === 'accepted') setShow(false) }} style={{ padding: '8px 16px', borderRadius: 8, background: C.accent, color: '#fff', fontWeight: 700, fontSize: 13 }}>Install</button>
-      <button onClick={() => { setShow(false); localStorage.setItem('pwa_dismissed', '1') }} style={{ color: C.dim, fontSize: 18 }}>✕</button>
-    </div>
-  )
-}
