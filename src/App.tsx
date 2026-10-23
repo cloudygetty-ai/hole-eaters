@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import mapboxgl from "mapbox-gl";
+import maplibregl from "maplibre-gl";
 import { ArrowUp, ChevronDown, Video, VideoOff } from 'lucide-react'
-import "mapbox-gl/dist/mapbox-gl.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
 import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, submitVibeCheck, getMyVibeCheckFor, getVibeSummary } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage, VibeSummary } from './lib/supabase'
@@ -1783,6 +1783,38 @@ function GhostBanner({ onDisable }: { onDisable: () => void }) {
 }
 
 // ─── Map Screen ───────────────────────────────────────────────────────────────
+// Free OpenStreetMap vector tiles, no API key, so the map loads on every deploy without env setup.
+const MAP_STYLE_URL = (import.meta.env.VITE_MAP_STYLE_URL as string | undefined) || 'https://tiles.openfreemap.org/styles/dark'
+const MAX_MAP_TRIES = 4
+const MAP_LOAD_TIMEOUT_MS = 15000
+
+function hasWebGL(): boolean {
+  try {
+    const c = document.createElement('canvas')
+    return !!(c.getContext('webgl2') || c.getContext('webgl'))
+  } catch { return false }
+}
+
+// Extruded buildings for the 3D/street view; skipped quietly if the style has no building data.
+function add3dBuildings(map: maplibregl.Map) {
+  const source = Object.keys(map.getStyle().sources ?? {}).find(k => k === 'openmaptiles')
+  if (!source || map.getLayer('3d-buildings')) return
+  if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none')
+  map.addLayer({
+    id: '3d-buildings',
+    source,
+    'source-layer': 'building',
+    type: 'fill-extrusion',
+    minzoom: 14,
+    paint: {
+      'fill-extrusion-color': '#1a1a2e',
+      'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 14.05, ['coalesce', ['get', 'render_height'], 0]],
+      'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 14, 0, 14.05, ['coalesce', ['get', 'render_min_height'], 0]],
+      'fill-extrusion-opacity': 0.8,
+    },
+  })
+}
+
 function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost, onOpenPulseRoom, pulseRooms, onCreatePulseRoom, gpsCoords, isPremium }: {
   myProfile: Partial<Profile>; nearby: (Profile & { isSeed?: boolean })[]; myPos: { x: number; y: number };
   onMovePin: (p: { x: number; y: number }) => void; onSelectUser: (u: Profile & { isSeed?: boolean }) => void;
@@ -1791,17 +1823,19 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   gpsCoords: { lat: number; lng: number } | null; isPremium: boolean;
 }) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<mapboxgl.Map | null>(null)
-  const myMarkerRef = useRef<mapboxgl.Marker | null>(null)
-  const nearbyMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map())
-  const pulseMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map())
+  const mapRef = useRef<maplibregl.Map | null>(null)
+  const myMarkerRef = useRef<maplibregl.Marker | null>(null)
+  const nearbyMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
+  const pulseMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const [mapReady, setMapReady] = useState(false)
+  // Grid fallback only when the device has no WebGL or the map failed MAX_MAP_TRIES times
+  const [mapFailed, setMapFailed] = useState(() => !hasWebGL())
+  const triesRef = useRef(0)
   // Bumped when iOS drops the WebGL context, forcing a clean map rebuild
   const [mapEpoch, setMapEpoch] = useState(0)
   const [streetMode, setStreetMode] = useState(false)
   const [showStreetView, setShowStreetView] = useState(false)
 
-  const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
   const onlineCount = nearby.filter(u => u.online).length
   const baseLat = gpsCoords?.lat ?? 40.7484
   const baseLng = gpsCoords?.lng ?? -73.9857
@@ -1817,43 +1851,43 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
 
   // ── Init Mapbox map ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapContainerRef.current || !MAPBOX_TOKEN || mapRef.current) return
-    mapboxgl.accessToken = MAPBOX_TOKEN
-    const map = new mapboxgl.Map({
+    if (!mapContainerRef.current || mapFailed || mapRef.current) return
+    let map: maplibregl.Map
+    try {
+      map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: 'mapbox://styles/mapbox/dark-v11',
+      style: MAP_STYLE_URL,
       center: [baseLng, baseLat],
       zoom: 15.5,
       pitch: 45,
       bearing: -10,
       // iOS Safari evicts heavy WebGL contexts; keep the GPU footprint small
-      antialias: false,
-    })
-    map.on('webglcontextlost', () => {
-      console.warn('[map] WebGL context lost, rebuilding')
+      canvasContextAttributes: { antialias: false },
+      attributionControl: { compact: true },
+      })
+    } catch (err) {
+      console.warn('[map] init failed', err)
+      setMapFailed(true)
+      return
+    }
+    // Rebuild instead of leaving a blank map: lost GPU context, or style never loads (bad network)
+    const rebuild = (why: string) => {
+      triesRef.current += 1
+      console.warn(`[map] ${why}, rebuild ${triesRef.current}/${MAX_MAP_TRIES}`)
       setMapReady(false)
-      setMapEpoch(e => e + 1)
-    })
+      if (triesRef.current >= MAX_MAP_TRIES) setMapFailed(true)
+      else setTimeout(() => setMapEpoch(e => e + 1), 1500 * triesRef.current)
+    }
+    const loadTimer = setTimeout(() => { if (!map.loaded()) rebuild('style load timed out') }, MAP_LOAD_TIMEOUT_MS)
+    map.on('webglcontextlost', () => rebuild('WebGL context lost'))
     map.on('error', (e) => console.warn('[map]', e.error?.message ?? e))
     map.on('load', () => {
-      // 3D buildings layer
-      map.addLayer({
-        id: 'add-3d-buildings',
-        source: 'composite',
-        'source-layer': 'building',
-        filter: ['==', 'extrude', 'true'],
-        type: 'fill-extrusion',
-        minzoom: 14,
-        paint: {
-          'fill-extrusion-color': '#1a1a2e',
-          'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 14.05, ['get', 'height']],
-          'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 14, 0, 14.05, ['get', 'min_height']],
-          'fill-extrusion-opacity': 0.8,
-        },
-      })
+      clearTimeout(loadTimer)
+      triesRef.current = 0
+      add3dBuildings(map)
       setMapReady(true)
     })
-    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-left')
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const stopFollowing = (e: any) => {
       if (e.originalEvent) { followRef.current = false; setFollowing(false) }
@@ -1865,6 +1899,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
     hasCenteredRef.current = false
     mapRef.current = map
     return () => {
+      clearTimeout(loadTimer)
       nearbyMarkersRef.current.forEach(m => m.remove())
       pulseMarkersRef.current.forEach(m => m.remove())
       myMarkerRef.current?.remove()
@@ -1873,7 +1908,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       map.remove()
       mapRef.current = null
     }
-  }, [MAPBOX_TOKEN, mapEpoch])
+  }, [mapFailed, mapEpoch])
 
   // ── Follow GPS ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1913,7 +1948,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
     el.style.cssText = `width:48px;height:48px;border-radius:50%;background:${isGhost ? 'rgba(100,255,218,0.08)' : `linear-gradient(135deg,${myProfile.color ?? C.accent}88,${myProfile.color ?? C.accent}22)`};border:2.5px solid ${isGhost ? C.ghost : myProfile.color ?? C.accent};display:flex;align-items:center;justify-content:center;font-size:22px;cursor:grab;box-shadow:0 0 16px ${isGhost ? C.ghost : myProfile.color ?? C.accent}44;z-index:100;transition:box-shadow .3s`
     el.textContent = isGhost ? '👻' : (myProfile.emoji ?? '🔥')
     el.title = myProfile.name ?? 'You'
-    const marker = new mapboxgl.Marker({ element: el, draggable: false })
+    const marker = new maplibregl.Marker({ element: el, draggable: false })
       .setLngLat([baseLng, baseLat])
       .addTo(mapRef.current)
     myMarkerRef.current = marker
@@ -1960,7 +1995,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       label.textContent = u.name
       el.appendChild(avatar); el.appendChild(label)
       el.addEventListener('click', () => onSelectUser(u))
-      const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
+      const marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
       nearbyMarkersRef.current.set(u.id, marker)
     })
   }, [nearby, anchorLat, anchorLng, mapReady])
@@ -1987,13 +2022,13 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       sub.textContent = `${room.memberIds.length} inside`
       el.appendChild(beacon); el.appendChild(lbl); el.appendChild(sub)
       el.addEventListener('click', () => onOpenPulseRoom(room.id))
-      const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
+      const marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
       pulseMarkersRef.current.set(room.id, marker)
     })
   }, [pulseRooms, anchorLat, anchorLng, mapReady])
 
-  // ── Fallback: no Mapbox token → CSS canvas map ───────────────────────────
-  if (!MAPBOX_TOKEN) {
+  // ── Fallback: no WebGL or map kept failing → CSS canvas map ──────────────
+  if (mapFailed) {
     const positions = nearby.map((u, idx) => {
       if ((u as any).isSeed) {
         const seedSlots = [{ x: 12, y: 12 }, { x: 85, y: 10 }, { x: 8, y: 80 }, { x: 88, y: 82 }, { x: 50, y: 8 }, { x: 90, y: 48 }, { x: 6, y: 50 }, { x: 50, y: 90 }]
@@ -2041,8 +2076,13 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
 
   return (
     <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-      {/* Mapbox container */}
-      <div ref={mapContainerRef} role="region" aria-label="Cruising map" style={{ position: 'absolute', inset: 0 }} />
+      {/* Map container */}
+      <div ref={mapContainerRef} role="region" aria-label="Cruising map" style={{ position: 'absolute', inset: 0, background: C.bg }} />
+      {!mapReady && (
+        <div aria-live="polite" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 3, color: C.dim, fontSize: 12, fontFamily: FONT }}>
+          Loading map…
+        </div>
+      )}
 
       {/* Ghost tint overlay */}
       {isGhost && <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(100,255,218,0.015) 20px, rgba(100,255,218,0.015) 40px)', pointerEvents: 'none', zIndex: 2 }} />}

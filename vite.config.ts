@@ -48,6 +48,6 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ['mapbox-gl'],
+    exclude: ['maplibre-gl'],
   },
 })
