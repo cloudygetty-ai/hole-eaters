@@ -1795,17 +1795,17 @@ function hasWebGL(): boolean {
   } catch { return false }
 }
 
-// Extruded buildings for the 3D/street view; skipped quietly if the style has no building data.
-function add3dBuildings(map: maplibregl.Map) {
+// Extruded buildings for street view only; the flat overview keeps streets readable in dense areas.
+function add3dBuildings(map: maplibregl.Map, visible: boolean) {
   const source = Object.keys(map.getStyle().sources ?? {}).find(k => k === 'openmaptiles')
   if (!source || map.getLayer('3d-buildings')) return
-  if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', 'none')
   map.addLayer({
     id: '3d-buildings',
     source,
     'source-layer': 'building',
     type: 'fill-extrusion',
     minzoom: 14,
+    layout: { visibility: visible ? 'visible' : 'none' },
     paint: {
       'fill-extrusion-color': '#1a1a2e',
       'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 14.05, ['coalesce', ['get', 'render_height'], 0]],
@@ -1813,6 +1813,12 @@ function add3dBuildings(map: maplibregl.Map) {
       'fill-extrusion-opacity': 0.8,
     },
   })
+}
+
+// Overview: flat map with streets. Street view: tilted 3D buildings.
+function setBuildings3d(map: maplibregl.Map, on: boolean) {
+  if (map.getLayer('3d-buildings')) map.setLayoutProperty('3d-buildings', 'visibility', on ? 'visible' : 'none')
+  if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', on ? 'none' : 'visible')
 }
 
 function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost, onOpenPulseRoom, pulseRooms, onCreatePulseRoom, gpsCoords, isPremium }: {
@@ -1834,6 +1840,9 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   // Bumped when iOS drops the WebGL context, forcing a clean map rebuild
   const [mapEpoch, setMapEpoch] = useState(0)
   const [streetMode, setStreetMode] = useState(false)
+  // Read by the init effect so a map rebuilt mid-session keeps the current view
+  const streetModeRef = useRef(false)
+  streetModeRef.current = streetMode
   const [showStreetView, setShowStreetView] = useState(false)
 
   const onlineCount = nearby.filter(u => u.online).length
@@ -1859,8 +1868,8 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       style: MAP_STYLE_URL,
       center: [baseLng, baseLat],
       zoom: 15.5,
-      pitch: 45,
-      bearing: -10,
+      pitch: streetModeRef.current ? 60 : 0,
+      bearing: 0,
       // iOS Safari evicts heavy WebGL contexts; keep the GPU footprint small
       canvasContextAttributes: { antialias: false },
       attributionControl: { compact: true },
@@ -1884,7 +1893,8 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
     map.on('load', () => {
       clearTimeout(loadTimer)
       triesRef.current = 0
-      add3dBuildings(map)
+      add3dBuildings(map, streetModeRef.current)
+      setBuildings3d(map, streetModeRef.current)
       setMapReady(true)
     })
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
@@ -1926,16 +1936,18 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
     followRef.current = true
     setFollowing(true)
     if (mapRef.current) {
-      mapRef.current.easeTo({ center: [baseLng, baseLat], zoom: streetMode ? 18 : 15.5, duration: 800 })
+      mapRef.current.easeTo({ center: [baseLng, baseLat], zoom: streetMode ? 16.5 : 15.5, duration: 800 })
     }
   }
 
   // ── Street view toggle: pitch + zoom ────────────────────────────────────
   useEffect(() => {
     if (!mapRef.current || !mapReady) return
+    setBuildings3d(mapRef.current, streetMode)
     mapRef.current.easeTo({
-      pitch: streetMode ? 75 : 45,
-      zoom: streetMode ? 18 : 15.5,
+      pitch: streetMode ? 60 : 0,
+      bearing: 0,
+      zoom: streetMode ? 16.5 : 15.5,
       duration: 800,
     })
   }, [streetMode, mapReady])
