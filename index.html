@@ -10,7 +10,14 @@
           var ref = q.get('ref')
           if (ref && /^[a-z0-9_-]{4,24}$/i.test(ref)) localStorage.setItem('he_ref', ref.toLowerCase())
           var utm = q.get('utm_source')
-          if (utm) localStorage.setItem('he_src', utm.replace(/[^a-z0-9_.-]/gi, '').slice(0, 64))
+          if (utm) {
+            var clean = function (v, n) { return v ? v.replace(/[^a-z0-9_.{}-]/gi, '').slice(0, n) : null }
+            localStorage.setItem('he_src', clean(utm, 64))
+            localStorage.setItem('he_attr', JSON.stringify({
+              source: clean(utm, 64), medium: clean(q.get('utm_medium'), 64), campaign: clean(q.get('utm_campaign'), 64),
+              content: clean(q.get('utm_content'), 64), click_id: clean(q.get('click_id'), 128), landed_at: new Date().toISOString()
+            }))
+          }
           if (q.has('home')) return
           var standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
           var authCallback = /access_token|refresh_token|type=recovery|error_description/.test(l.hash) || q.has('code')

@@ -44,6 +44,7 @@ export default defineConfig({
       input: {
         landing: path.resolve(__dirname, 'index.html'),
         app: path.resolve(__dirname, 'app.html'),
+        go: path.resolve(__dirname, 'go.html'),
       },
     },
   },

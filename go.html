@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Paid-traffic landing. Captures attribution before paint; members with a session skip straight to the app. -->
+    <script>
+      (function () {
+        try {
+          var l = location, q = new URLSearchParams(l.search)
+          var clean = function (v, n) { return v ? v.replace(/[^a-z0-9_.{}-]/gi, '').slice(0, n) : null }
+          var src = clean(q.get('utm_source'), 64)
+          if (src) {
+            localStorage.setItem('he_src', src)
+            // Last paid touch wins: a later ad click re-attributes the eventual signup.
+            localStorage.setItem('he_attr', JSON.stringify({
+              source: src,
+              medium: clean(q.get('utm_medium'), 64),
+              campaign: clean(q.get('utm_campaign'), 64),
+              content: clean(q.get('utm_content'), 64),
+              click_id: clean(q.get('click_id'), 128),
+              landed_at: new Date().toISOString()
+            }))
+          }
+          for (var i = 0; i < localStorage.length; i++) {
+            if (/^sb-.+-auth-token$/.test(localStorage.key(i) || '')) { l.replace('/app'); return }
+          }
+        } catch (e) {}
+      })()
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#090608" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="rating" content="adult" />
+
+    <title>Hole Eaters — who's near, right now · 18+</title>
+    <meta name="description" content="The live cruising map for guys. See who's near and who's down, right now. Free, 18+, no download." />
+    <link rel="canonical" href="https://www.hole-eaters.com/" />
+
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,500..900;1,6..96,400..700&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@500&display=swap" />
+    <link rel="stylesheet" href="/src/landing/landing.css" />
+  </head>
+  <body class="go">
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="top">
+      <span class="top__mark">
+        <img src="/brand/emblem.webp" alt="" width="36" height="36" />
+        <span>Hole Eaters</span>
+      </span>
+    </header>
+
+    <main class="go__main">
+      <p class="eyebrow reveal" style="--d: 1"><span class="go__dot" aria-hidden="true"></span>Live near you &middot; 18+</p>
+      <h1 class="reveal" style="--d: 2" id="go-headline">Someone nearby<br /><em>is hungry.</em></h1>
+      <p class="go__lede reveal" style="--d: 3">The live cruising map for guys. See who&rsquo;s around right now, who&rsquo;s awake, and who&rsquo;s down.</p>
+
+      <ul class="go__points reveal" style="--d: 4">
+        <li><b>Live map</b> Real distance on every pin</li>
+        <li><b>Pulse Rooms</b> Pop-up rooms for whoever&rsquo;s in range</li>
+        <li><b>Ghost Mode</b> Look without being seen</li>
+      </ul>
+
+      <section class="go__gate reveal" style="--d: 5" aria-labelledby="gate-title">
+        <h2 id="gate-title">Adults only</h2>
+        <p>Hole Eaters contains sexual content. You must be 18 or older to enter.</p>
+        <a class="btn btn--ember btn--block" id="go-enter" href="/app">II&rsquo;m 18 or older &mdash; open the maprsquo;m 18+ I&rsquo;m 18 or older &mdash; open the mapmdash; open the map</a>
+        <a class="go__leave" href="https://www.google.com" rel="noopener">I&rsquo;m under 18 &mdash; leave</a>
+      </section>
+
+      <p class="hero__fine">Free &middot; No download &middot; Works in your browser</p>
+    </main>
+
+    <footer class="foot">
+      <p>Hole Eaters is for adults 18+ only. Be safe, be sure, be kind.</p>
+    </footer>
+
+    <script type="module" src="/src/landing/go.ts"></script>
+  </body>
+</html>
