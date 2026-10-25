@@ -1,6 +1,6 @@
 # Hole Eaters — Launch Kit
 
-Organic-only playbook. Meta, Google, and TikTok ads will reject or throttle an adult cruising app, so every link below is free distribution.
+Organic playbook plus a paid track on adult ad networks. Meta, Google, and TikTok will reject or throttle an adult cruising app, so paid traffic runs only on adult-friendly networks and lands on `/go`.
 
 ## The loop
 
@@ -68,3 +68,35 @@ group by 1 order by 2 desc limit 20;
 - Monday: pull the three queries above, cut the weakest channel, double the strongest.
 - Pick next week's venue drops from `waitlist_demand()`.
 - Ship one shareable visual (sticker, screen, OG variant).
+
+## Paid track (adult ad networks)
+
+Every paid click lands on `/go`: one screen, headline matched to the ad, 18+ gate, one button into `/app`. The landing stores the last ad touch (30-day window); the first profile save ships it to `record_signup_attribution()`.
+
+```
+Ad click ─► /go?utm_*&click_id ─► he_attr (localStorage) ─► 18+ ─► /app ─► profile saved
+                                                                              │
+                                              record_signup_attribution() ◄───┘  (once, profile < 24h)
+```
+
+### Link template
+
+```
+https://www.hole-eaters.com/go?utm_source=<network>&utm_medium=<display|native>&utm_campaign=<city>-<yyyymm>&utm_content=<unit>-<angle>&click_id=<NETWORK_CLICK_MACRO>
+```
+
+- `utm_content` angle picks the headline: `proximity` (default, "Someone nearby is hungry."), `afterdark`, `appetite`.
+- `click_id`: paste the network's click-id macro so a server postback can be added later.
+  // TODO[P2]: confirm ExoClick's conversion-tracking macro name in its dashboard before launch.
+- Example: `/go?utm_source=exoclick&utm_medium=display&utm_campaign=nj-202611&utm_content=300x250-proximity`
+
+### Measure
+
+```sql
+-- Signups and next-day return per ad (admin only)
+select * from acquisition_report(14);
+```
+
+Judge creatives on **returned**, not signups. Cut any unit with clicks but no signups after 5–7 days; move its budget to the winner.
+
+// TODO[P2]: server-to-server conversion postback (edge function) so networks can optimise bids on signups.

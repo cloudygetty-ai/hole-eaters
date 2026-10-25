@@ -6,6 +6,7 @@ import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromP
 import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, submitVibeCheck, getMyVibeCheckFor, getVibeSummary } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage, VibeSummary } from './lib/supabase'
 import { claimStoredReferral } from './lib/referrals'
+import { recordStoredAttribution } from './lib/attribution'
 import { presenceLabel } from './lib/presenceLabel'
 import { registerWebPush, startPresence, unregisterWebPush, useOnlineIds } from './lib/citadel'
 import { InviteBanner } from './components/InviteBanner'
@@ -3582,6 +3583,7 @@ export default function App() {
     localStorage.setItem('he_local_profile', JSON.stringify(data))
     localStorage.setItem('he_profile_user_id', currentUser.id)
     claimStoredReferral().catch(() => {})
+    recordStoredAttribution().catch(() => {})
     return null
   }
 

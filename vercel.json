@@ -14,6 +14,10 @@
       "destination": "/app.html"
     },
     {
+      "source": "/go",
+      "destination": "/go.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
@@ -49,7 +53,7 @@
       ]
     },
     {
-      "source": "/(index.html|app.html|)",
+      "source": "/(index.html|app.html|go.html|go|)",
       "headers": [
         {
           "key": "Cache-Control",
