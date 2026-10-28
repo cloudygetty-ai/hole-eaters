@@ -3,14 +3,15 @@ import maplibregl from "maplibre-gl";
 import { ArrowUp, ChevronDown, Video, VideoOff } from 'lucide-react'
 import "maplibre-gl/dist/maplibre-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
-import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, submitVibeCheck, getMyVibeCheckFor, getVibeSummary } from './lib/supabase'
-import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage, VibeSummary } from './lib/supabase'
+import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, getReviewSummary, type ReviewSummary } from './lib/supabase'
+import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
 import { claimStoredReferral } from './lib/referrals'
 import { presenceLabel } from './lib/presenceLabel'
 import { registerWebPush, startPresence, unregisterWebPush, useOnlineIds } from './lib/citadel'
 import { InviteBanner } from './components/InviteBanner'
 import type { User } from '@supabase/supabase-js'
 import { CoverBanner } from './components/CoverBanner'
+import { ReviewsPanel, ReviewBadge, MyReviewsCard, type ReviewsTheme } from './components/Reviews'
 import { InstallPrompt } from './components/InstallPrompt'
 import { StickerPicker } from './components/StickerPicker'
 import { isStickerUrl } from './lib/stickers'
@@ -29,6 +30,7 @@ const C = {
 }
 const DT: DetailsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim }
 const FONT = "'DM Mono', 'Fira Code', monospace"
+const RT: ReviewsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, green: C.green, amber: C.amber, orange: C.orange, red: '#ef4444' }
 const VT: VideoTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, dim: C.dim, muted: C.muted, accent: C.accent, font: FONT }
 const APP_VERSION = '1.0.0'
 const CHANGELOG: { v: string; date: string; items: string[] }[] = [
@@ -703,49 +705,21 @@ function SeedChat({ seed, onBack }: { seed: SeedWithAI; onBack: () => void }) {
 // ─── Profile Drawer ───────────────────────────────────────────────────────────
 function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock, onPass }: { user: SeedWithAI | (Profile & { isSeed?: false }); myId: string; onClose: () => void; onLike: () => void; onMessage: () => void; onTap: (stickerUrl: string) => void; onBlock: (id: string) => void; onPass: (id: string) => void }) {
   const [showTap, setShowTap] = useState(false)
-  const [tab, setTab] = useState<'profile' | 'vibe' | 'report'>('profile')
+  const [tab, setTab] = useState<'profile' | 'reviews' | 'report'>('profile')
   const [liked, setLiked] = useState(false)
   const [reportReason, setReportReason] = useState<ReportReason>('fake_profile')
   const [reportDetails, setReportDetails] = useState('')
   const [reportSent, setReportSent] = useState(false)
   const [blocked, setBlocked] = useState(false)
-  const [vibeSummary, setVibeSummary] = useState<VibeSummary | null>(null)
-  const [vibeLoading, setVibeLoading] = useState(false)
-  const [myVibeScore, setMyVibeScore] = useState(70)
-  const [myVibeSummary, setMyVibeSummary] = useState('')
-  const [myVibeSent, setMyVibeSent] = useState(false)
-  const [vibeSubmitting, setVibeSubmitting] = useState(false)
+  const [reviewSummary, setReviewSummary] = useState<ReviewSummary | null>(null)
 
+  // Header badge (★ + flake level) loads with the drawer; the Reviews tab refreshes it after edits
   useEffect(() => {
-    if (tab !== 'vibe' || user.isSeed || !myId) return
-    let cancelled = false
-    setVibeLoading(true)
-    Promise.all([
-      getVibeSummary(user.id),
-      getMyVibeCheckFor(myId, user.id),
-    ]).then(([summaryRes, mineRes]) => {
-      if (cancelled) return
-      setVibeSummary(summaryRes.data)
-      if (mineRes.data) {
-        setMyVibeSent(true)
-        setMyVibeScore(mineRes.data.score)
-        setMyVibeSummary(mineRes.data.summary || '')
-      }
-    }).finally(() => { if (!cancelled) setVibeLoading(false) })
-    return () => { cancelled = true }
-  }, [tab, user.id, user.isSeed, myId])
-
-  async function sendVibeCheck() {
-    if (!myId || user.isSeed || vibeSubmitting) return
-    setVibeSubmitting(true)
-    const { error } = await submitVibeCheck(myId, user.id, myVibeScore, myVibeSummary.trim())
-    setVibeSubmitting(false)
-    if (!error) {
-      setMyVibeSent(true)
-      const { data } = await getVibeSummary(user.id)
-      setVibeSummary(data)
-    }
-  }
+    if (user.isSeed || !myId) return
+    let live = true
+    getReviewSummary(user.id).then(({ data }) => { if (live) setReviewSummary(data) })
+    return () => { live = false }
+  }, [user.id, user.isSeed, myId])
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
@@ -759,7 +733,7 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
           <Avatar user={user} size={84} />
         </div>
         <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, padding: '0 20px' }}>
-          {(['profile', 'vibe', 'report'] as const).map(t => (
+          {(['profile', 'reviews', 'report'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: tab === t ? user.color : C.dim, borderBottom: `2px solid ${tab === t ? user.color : 'transparent'}`, textTransform: 'capitalize' }}>{t}</button>
           ))}
         </div>
@@ -771,6 +745,7 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
                 <span style={{ fontSize: 16, color: C.muted }}>{user.age}</span>
                 <span style={{ marginLeft: 'auto', fontSize: 12, color: user.color, background: `${user.color}22`, padding: '3px 10px', borderRadius: 20, fontWeight: 600 }}>{user.role}</span>
               </div>
+              <ReviewBadge summary={reviewSummary} theme={RT} onClick={() => setTab('reviews')} />
               <p style={{ color: C.muted, fontSize: 14, marginBottom: 14, lineHeight: 1.5 }}>{user.bio || 'No bio.'}</p>
               {user.tags?.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -780,61 +755,15 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
               <ProfileDetailsView details={(user as Profile).details} theme={DT} />
             </div>
           )}
-          {tab === 'vibe' && (
+          {tab === 'reviews' && (
             <div style={{ padding: '4px 0' }}>
               {user.isSeed ? (
                 <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                  <div style={{ fontSize: 40, marginBottom: 8 }}>🔮</div>
-                  <p style={{ color: C.muted, fontSize: 14 }}>Vibe checks aren't available for seed profiles.</p>
+                  <div style={{ fontSize: 40, marginBottom: 8 }}>⭐</div>
+                  <p style={{ color: C.muted, fontSize: 14 }}>Reviews aren't available for this profile.</p>
                 </div>
-              ) : vibeLoading ? (
-                <div style={{ textAlign: 'center', padding: '20px 0', color: C.dim, fontSize: 13 }}>Loading vibe…</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
-                    <div style={{ fontSize: 36, fontWeight: 800, color: user.color }}>
-                      {vibeSummary?.avg_score != null ? Math.round(vibeSummary.avg_score) : '—'}
-                      <span style={{ fontSize: 16, color: C.dim, fontWeight: 600 }}>/100</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
-                      {vibeSummary?.check_count ? `${vibeSummary.check_count} vibe check${vibeSummary.check_count === 1 ? '' : 's'}` : 'No vibe checks yet'}
-                    </div>
-                  </div>
-                  <div style={{ height: 1, background: C.border }} />
-                  {myVibeSent ? (
-                    <div style={{ textAlign: 'center', padding: '8px 0' }}>
-                      <div style={{ fontSize: 28, marginBottom: 4 }}>✅</div>
-                      <p style={{ fontWeight: 700, fontSize: 14 }}>You sent a vibe check</p>
-                      <p style={{ color: C.dim, fontSize: 12, marginTop: 4 }}>Score: {myVibeScore}/100{myVibeSummary ? ` — "${myVibeSummary}"` : ''}</p>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <div style={{ fontSize: 13, color: C.muted }}>Rate the vibe with {user.name}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <input
-                          type="range" min={0} max={100} value={myVibeScore}
-                          onChange={e => setMyVibeScore(Number(e.target.value))}
-                          style={{ flex: 1, accentColor: user.color }}
-                          aria-label="Vibe score"
-                        />
-                        <span style={{ fontWeight: 800, fontSize: 15, width: 36, textAlign: 'right', color: user.color }}>{myVibeScore}</span>
-                      </div>
-                      <input
-                        value={myVibeSummary}
-                        onChange={e => setMyVibeSummary(e.target.value.slice(0, 80))}
-                        placeholder="One line about the vibe (optional)"
-                        style={{ background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 14, outline: 'none' }}
-                      />
-                      <button
-                        onClick={sendVibeCheck}
-                        disabled={vibeSubmitting}
-                        style={{ padding: '12px', borderRadius: 12, background: `${user.color}22`, border: `1px solid ${user.color}55`, color: user.color, fontWeight: 700, fontSize: 14, opacity: vibeSubmitting ? 0.6 : 1 }}
-                      >
-                        {vibeSubmitting ? 'Sending…' : '🔮 Send Vibe Check'}
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <ReviewsPanel targetId={user.id} targetName={user.name} myId={myId} theme={RT} onSummary={setReviewSummary} />
               )}
             </div>
           )}
@@ -3781,6 +3710,8 @@ export default function App() {
             </div>
 
             <div style={{ padding: '0 16px 32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {user && <MyReviewsCard myId={user.id} theme={RT} surface={C.surf2} />}
+
               {/* Notifications */}
               <div style={{ background: C.surf2, border: `1px solid ${pushState === 'on' ? C.accent + '33' : C.border}`, borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span style={{ fontSize: 22 }}>🔔</span>

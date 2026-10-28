@@ -333,44 +333,57 @@ export async function sendPasswordReset(email: string) {
   })
 }
 
-// ─── Vibe Checks ──────────────────────────────────────────────────────────────
-export interface VibeCheck {
+// ─── Reviews + Flake Scale ────────────────────────────────────────────────────
+// Reviewer identity never leaves the database: others read through get_reviews / get_review_summary.
+export type MeetOutcome = 'showed' | 'late' | 'flaked' | 'chat_only'
+
+export interface Review {
   id: string
-  from_user: string
-  to_user: string
-  score: number
-  summary: string | null
+  met: MeetOutcome
+  rating: number | null
+  tags: string[]
+  body: string | null
   created_at: string
+  is_mine: boolean
 }
 
-export interface VibeSummary {
-  avg_score: number | null
-  check_count: number
+export interface ReviewSummary {
+  review_count: number
+  avg_rating: number | null
+  meetups: number
+  showed: number
+  late: number
+  flaked: number
+  flake_rate: number | null
+  can_review: boolean
 }
 
-export async function submitVibeCheck(fromUser: string, toUser: string, score: number, summary?: string) {
-  return supabase
-    .from('vibe_checks')
-    .upsert(
-      { from_user: fromUser, to_user: toUser, score, summary: summary || null },
-      { onConflict: 'from_user,to_user' }
-    )
-    .select()
-    .single()
+export interface ReviewInput { met: MeetOutcome; rating: number | null; tags: string[]; body: string | null }
+
+export async function getReviews(target: string): Promise<{ data: Review[]; error: any }> {
+  const { data, error } = await supabase.rpc('get_reviews', { target })
+  return { data: (data as Review[] | null) ?? [], error }
 }
 
-export async function getMyVibeCheckFor(fromUser: string, toUser: string) {
-  return supabase
-    .from('vibe_checks')
-    .select('*')
-    .eq('from_user', fromUser)
-    .eq('to_user', toUser)
-    .maybeSingle()
+export async function getReviewSummary(target: string): Promise<{ data: ReviewSummary | null; error: any }> {
+  const { data, error } = await supabase.rpc('get_review_summary', { target }).single()
+  return { data: data as ReviewSummary | null, error }
 }
 
-export async function getVibeSummary(targetUser: string): Promise<{ data: VibeSummary | null; error: any }> {
-  const { data, error } = await supabase.rpc('get_vibe_summary', { target_user: targetUser }).single()
-  return { data: data as VibeSummary | null, error }
+export async function getMyReviewFor(reviewer: string, target: string) {
+  return supabase.from('reviews').select('met,rating,tags,body').eq('reviewer_id', reviewer).eq('reviewee_id', target).maybeSingle()
+}
+
+export async function saveReview(reviewer: string, target: string, input: ReviewInput) {
+  return supabase.from('reviews').upsert({ reviewer_id: reviewer, reviewee_id: target, ...input }, { onConflict: 'reviewer_id,reviewee_id' })
+}
+
+export async function deleteMyReview(reviewer: string, target: string) {
+  return supabase.from('reviews').delete().eq('reviewer_id', reviewer).eq('reviewee_id', target)
+}
+
+export async function flagReview(reviewId: string) {
+  return supabase.rpc('flag_review', { review: reviewId })
 }
 
 // ─── Global Chat ──────────────────────────────────────────────────────────────
