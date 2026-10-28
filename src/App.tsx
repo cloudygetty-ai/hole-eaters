@@ -3,7 +3,7 @@ import maplibregl from "maplibre-gl";
 import { ArrowUp, ChevronDown, Video, VideoOff } from 'lucide-react'
 import "maplibre-gl/dist/maplibre-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
-import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, getReviewSummary, type ReviewSummary } from './lib/supabase'
+import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
 import { claimStoredReferral } from './lib/referrals'
 import { presenceLabel } from './lib/presenceLabel'
@@ -2693,7 +2693,8 @@ function OfflineBanner() {
 
 // ─── Admin Dashboard ──────────────────────────────────────────────────────────
 function AdminDashboard({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<'stats' | 'reports' | 'videos' | 'users' | 'bans'>('stats')
+  const [tab, setTab] = useState<'stats' | 'reports' | 'reviews' | 'videos' | 'users' | 'bans'>('stats')
+  const [flaggedReviews, setFlaggedReviews] = useState<FlaggedReview[]>([])
   const [stats, setStats] = useState<any>(null)
   const [reports, setReports] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
@@ -2708,12 +2709,14 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
 
   const load = async () => {
     setLoading(true)
-    const [s, r, u, b] = await Promise.all([
+    const [s, r, u, b, fr] = await Promise.all([
       getAdminStats(),
       getReports('pending'),
       getAllProfiles(),
       getBans(),
+      getFlaggedReviews(),
     ])
+    setFlaggedReviews(fr.data)
     if (s.data) setStats(s.data)
     if (r.data) setReports(r.data as any[])
     if (u.data) setUsers(u.data as any[])
@@ -2734,6 +2737,7 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
   const TABS = [
     { id: 'stats', label: '📊 Stats' },
     { id: 'reports', label: `🚨 Reports${reports.length ? ` (${reports.length})` : ''}` },
+    { id: 'reviews', label: `⭐ Reviews${flaggedReviews.length ? ` (${flaggedReviews.length})` : ''}` },
     { id: 'videos', label: '🎬 Videos' },
     { id: 'users', label: '👥 Users' },
     { id: 'bans', label: '🚫 Bans' },
@@ -2800,6 +2804,32 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
                   <button onClick={() => handleAction(r.id, 'actioned', 'warned')} style={{ flex: 1, padding: '8px', borderRadius: 8, background: `${C.amber}22`, border: `1px solid ${C.amber}44`, color: C.amber, fontWeight: 700, fontSize: 12 }}>Warn</button>
                   <button onClick={() => { handleBan(r.reported?.id, r.reason); handleAction(r.id, 'actioned', 'banned') }} style={{ flex: 1, padding: '8px', borderRadius: 8, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444', fontWeight: 700, fontSize: 12 }}>Ban</button>
                   <button onClick={() => handleAction(r.id, 'dismissed')} style={{ flex: 1, padding: '8px', borderRadius: 8, background: C.surf3, color: C.dim, fontWeight: 700, fontSize: 12 }}>Dismiss</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!loading && tab === 'reviews' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 12, color: C.dim }}>Reviews the person reviewed reported as unfair. Hide removes it from their profile and flake scale.</div>
+            {flaggedReviews.length === 0 && <div style={{ textAlign: 'center', color: C.dim, padding: 40 }}>No reported reviews 🎉</div>}
+            {flaggedReviews.map(r => (
+              <div key={r.id} style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>
+                  {r.reviewer_name ?? 'Unknown'} <span style={{ color: C.dim, fontWeight: 400 }}>reviewed</span> {r.reviewee_name ?? 'Unknown'}
+                </div>
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
+                  {{ showed: '✅ Showed up', late: '⏰ Late', flaked: '🫥 Flaked', chat_only: '💬 Chatted' }[r.met]}
+                  {r.rating != null && <span style={{ color: C.amber, marginLeft: 8 }}>{'★'.repeat(r.rating)}<span style={{ opacity: 0.25 }}>{'★'.repeat(5 - r.rating)}</span></span>}
+                  <span style={{ color: C.dim, marginLeft: 8 }}>{new Date(r.created_at).toLocaleDateString()}</span>
+                </div>
+                {r.tags.length > 0 && <div style={{ fontSize: 12, color: C.dim, marginTop: 4 }}>{r.tags.join(' · ')}</div>}
+                {r.body && <div style={{ fontSize: 13, color: C.text, marginTop: 6, fontStyle: 'italic' }}>"{r.body}"</div>}
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button onClick={async () => { const { error } = await moderateReview(r.id, true); if (!error) setFlaggedReviews(p => p.filter(x => x.id !== r.id)) }} style={{ flex: 1, padding: '8px', borderRadius: 8, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444', fontWeight: 700, fontSize: 12 }}>Hide review</button>
+                  <button onClick={async () => { const { error } = await moderateReview(r.id, false); if (!error) setFlaggedReviews(p => p.filter(x => x.id !== r.id)) }} style={{ flex: 1, padding: '8px', borderRadius: 8, background: C.surf3, color: C.muted, fontWeight: 700, fontSize: 12 }}>Keep it</button>
+                  <button onClick={() => { if (window.confirm(`Ban ${r.reviewer_name ?? 'this user'} for an abusive review?`)) handleBan(r.reviewer_id, 'Abusive review') }} style={{ padding: '8px 12px', borderRadius: 8, background: C.surf3, color: C.dim, fontWeight: 700, fontSize: 12 }}>Ban writer</button>
                 </div>
               </div>
             ))}

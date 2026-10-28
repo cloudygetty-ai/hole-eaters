@@ -386,6 +386,18 @@ export async function flagReview(reviewId: string) {
   return supabase.rpc('flag_review', { review: reviewId })
 }
 
+// Admin only (checked in the database): flagged reviews with who wrote them, and hide/keep
+export interface FlaggedReview extends Omit<Review, 'is_mine'> { reviewer_id: string; reviewer_name: string | null; reviewee_id: string; reviewee_name: string | null }
+
+export async function getFlaggedReviews(): Promise<{ data: FlaggedReview[]; error: any }> {
+  const { data, error } = await supabase.rpc('admin_flagged_reviews')
+  return { data: (data as FlaggedReview[] | null) ?? [], error }
+}
+
+export async function moderateReview(reviewId: string, hide: boolean) {
+  return supabase.rpc('admin_moderate_review', { review: reviewId, hide })
+}
+
 // ─── Global Chat ──────────────────────────────────────────────────────────────
 export interface GlobalMessage {
   id: string
