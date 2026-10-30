@@ -195,3 +195,7 @@ $$;
 
 revoke execute on function public.get_responsiveness(uuid), public.my_insights(int) from public, anon;
 grant execute on function public.get_responsiveness(uuid), public.my_insights(int) to authenticated;
+
+-- Applied after the app switched to age:age_shown and update-then-insert saves (an upsert would need
+-- SELECT on every written column). Real age is now owner-only, read via my_private().
+revoke select (age) on public.profiles from authenticated;
