@@ -70,6 +70,7 @@ begin
   -- ── Encryption ──
   perform pg_temp.as_user(a);
   begin insert into user_keys(user_id, public_key) values (a, '{"kty":"EC","crv":"P-256","x":"a","y":"b","d":"secret"}'); perform pg_temp.check(false, 'private key accepted'); exception when check_violation then perform pg_temp.check(true, 'private keys are refused'); end;
+  begin insert into messages(match_id, sender_id, content) values (mab, a, 'hello in plaintext'); perform pg_temp.check(false, 'plaintext message stored'); exception when insufficient_privilege then perform pg_temp.check(true, 'plaintext chat messages refused'); end;
   begin insert into messages(match_id, sender_id, content, enc) values (mab, a, '', '{"v":1,"sd":"x","iv":"x","ct":"x","k":{}}'); perform pg_temp.check(true, 'encrypted message accepted'); exception when others then perform pg_temp.check(false, 'encrypted message rejected: ' || sqlerrm); end;
   perform pg_temp.as_admin_db();
 

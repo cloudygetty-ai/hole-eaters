@@ -58,3 +58,16 @@ begin
   end if;
   return new;
 end $$;
+
+-- Enforced after the encrypting app was live: app users can only insert sealed messages.
+create or replace function public.messages_must_be_encrypted() returns trigger language plpgsql set search_path = public as $$
+begin
+  if current_user in ('authenticated', 'anon')
+     and (new.enc is null or coalesce(new.content, '') <> '' or new.media_url is not null or new.media_type is not null) then
+    raise exception 'chat messages must be end-to-end encrypted — update the app' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+create trigger messages_must_be_encrypted before insert on public.messages
+  for each row execute function public.messages_must_be_encrypted();
+revoke execute on function public.messages_must_be_encrypted() from public, anon, authenticated;
