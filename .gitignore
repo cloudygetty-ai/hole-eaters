@@ -8,3 +8,7 @@ bundle.html
 .parcel-cache/
 *.mdb
 __pycache__/
+
+# Playwright
+/test-results/
+/playwright-report/

@@ -1,0 +1,57 @@
+name: e2e
+
+# Runs on every push and pull request:
+#  - app: the real built app in Chromium against an in-memory fake Supabase (e2e/)
+#  - db-security: Postgres security checks against the real database, always rolled back
+#    (only when the SUPABASE_DB_URL repository secret is set)
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+        env:
+          CI: 'true'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  db-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip when no database secret is configured
+        if: env.SUPABASE_DB_URL == ''
+        run: echo "Set the SUPABASE_DB_URL secret to run database security tests."
+      - name: Database security tests (rolled back)
+        if: env.SUPABASE_DB_URL != ''
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/security.sql

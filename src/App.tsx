@@ -6,7 +6,7 @@ maplibregl.setWorkerUrl(mapWorkerUrl);
 import { ArrowUp, ChevronDown, Video, VideoOff } from 'lucide-react'
 import "maplibre-gl/dist/maplibre-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
-import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, ensureUserId, uploadChatMedia, signChatMedia, blockUser, getBlockedIds, postGlobalMessage, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
+import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, ensureUserId, signChatMedia, blockUser, getBlockedIds, postGlobalMessage, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
 import { claimStoredReferral } from './lib/referrals'
 import { presenceLabel } from './lib/presenceLabel'
@@ -15,6 +15,8 @@ import { InviteBanner } from './components/InviteBanner'
 import type { User } from '@supabase/supabase-js'
 import { CoverBanner } from './components/CoverBanner'
 import { ReviewsPanel, ReviewBadge, MyReviewsCard, type ReviewsTheme } from './components/Reviews'
+import { sendSecure, uploadSecureFile, viewMessage, fileUrl, NoKeysError, type ChatView } from './lib/secureChat'
+import { ensureDeviceKey } from './lib/e2ee'
 import { InstallPrompt } from './components/InstallPrompt'
 import { StickerPicker } from './components/StickerPicker'
 import { isStickerUrl } from './lib/stickers'
@@ -330,7 +332,25 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
 
 // ─── Chat Screen ──────────────────────────────────────────────────────────────
 function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string; other: Profile; onBack: () => void }) {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<ChatView[]>([])
+  // Decrypted attachments → local blob: URLs (decrypted on this device only)
+  const [files, setFiles] = useState<Record<string, string>>({})
+  useEffect(() => {
+    messages.forEach(m => {
+      if (m.file && m.media_url && !files[m.media_url]) {
+        const id = m.media_url
+        fileUrl(m.file).then(u => { if (u) setFiles(prev => ({ ...prev, [id]: u })) })
+      }
+    })
+  }, [messages]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The app-wide toast isn't on screen while a chat is open, so the chat shows its own notice
+  const [notice, setNotice] = useState<string | null>(null)
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const say = (text: string) => { setNotice(text); if (noticeTimer.current) clearTimeout(noticeTimer.current); noticeTimer.current = setTimeout(() => setNotice(null), 6000) }
+  const secureError = (e: unknown, what: string) => {
+    if (e instanceof NoKeysError) say(`🔒 ${other.name} needs to open Hole Eaters once before you can message him securely.`)
+    else { console.error(`[chat] ${what} failed`, e); say(`${what} didn't send. Try again.`) }
+  }
   // Private chat files → short-lived links. Re-signed every 50 min while the chat stays open.
   const [signed, setSigned] = useState<Record<string, string>>({})
   const [signEpoch, setSignEpoch] = useState(0)
@@ -339,7 +359,7 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
     const need = messages.map(m => m.media_url).filter((u): u is string => !!u && u.startsWith('chat/') && !signed[u])
     if (need.length) signChatMedia([...new Set(need)]).then(res => setSigned(prev => ({ ...prev, ...res })))
   }, [messages, signEpoch]) // eslint-disable-line react-hooks/exhaustive-deps
-  const mediaSrc = (u: string | null | undefined) => (u && u.startsWith('chat/') ? signed[u] : u) ?? undefined
+  const mediaSrc = (u: string | null | undefined) => (u && u.startsWith('e2ee:') ? files[u] : u && u.startsWith('chat/') ? signed[u] : u) ?? undefined
   const [input, setInput] = useState('')
   const [uploading, setUploading] = useState(false)
   const [previewFile, setPreviewFile] = useState<File | null>(null)
@@ -359,7 +379,7 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Messages arrive from three sources (initial load, realtime, polling) plus our own sends; merge by id
-  const mergeMessages = useCallback((incoming: Message[]) => {
+  const mergeMessages = useCallback((incoming: ChatView[]) => {
     if (incoming.length === 0) return
     setMessages(prev => {
       const byId = new Map(prev.map(m => [m.id, m]))
@@ -369,15 +389,15 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
   }, [])
 
   useEffect(() => {
-    const load = () => getMessages(match.id).then(({ data }) => {
+    const load = () => getMessages(match.id).then(async ({ data }) => {
       if (!data) return
-      mergeMessages(data as Message[])
+      mergeMessages(await Promise.all((data as ChatView[]).map(r => viewMessage(r, myId))))
       if ((data as Message[]).some(m => m.sender_id !== myId && !m.read_at)) markMessagesRead(match.id, myId).catch(() => {})
     })
     load()
     markMessagesRead(match.id, myId).catch(() => {})
     const sub = subscribeToMessages(match.id, (msg) => {
-      mergeMessages([msg])
+      viewMessage(msg as ChatView, myId).then(v => mergeMessages([v]))
       if (msg.sender_id !== myId) markMessagesRead(match.id, myId).catch(() => {})
     })
     // messages is in the realtime publication; this only backstops dropped sockets
@@ -408,7 +428,7 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
       setRecording(true)
       setRecordingMs(0)
       recordingTimer.current = setInterval(() => setRecordingMs(ms => ms + 100), 100)
-    } catch { showError('Microphone access denied') }
+    } catch { say('Microphone access denied') }
   }
 
   const stopRecording = () => {
@@ -424,17 +444,17 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
     setUploading(true)
     const ext = audioBlob.type.includes('webm') ? 'webm' : 'm4a'
     const file = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: audioBlob.type })
-    const { path: url } = await uploadChatMedia(match.id, myId, file)
-    if (url) { const { data } = await sendMessage(match.id, myId, '', url, 'audio'); if (data) mergeMessages([data as Message]) }
-    else showError('Voice note failed to send')
+    try {
+      const m = await uploadSecureFile(match.id, myId, file, 'audio')
+      mergeMessages([await sendSecure(match.id, myId, other.id, { m })])
+    } catch (e) { secureError(e, 'Voice note') }
     cancelVoice(); setUploading(false)
   }
 
   const sendSticker = async (url: string) => {
     setShowStickers(false)
-    const { data, error } = await sendMessage(match.id, myId, '', url, 'image')
-    if (error) { console.error('[chat] sticker failed', error); showError("Sticker didn't send"); return }
-    if (data) mergeMessages([data as Message])
+    try { mergeMessages([await sendSecure(match.id, myId, other.id, { s: url })]) }
+    catch (e) { secureError(e, 'Sticker') }
   }
 
   const send = async () => {
@@ -442,17 +462,19 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
     if (!input.trim() && !previewFile) return
     if (previewFile) {
       setUploading(true)
-      const { path: url, error: upErr } = await uploadChatMedia(match.id, myId, previewFile)
-      if (upErr?.message === 'metadata_strip_failed') showError("Couldn't remove location data from that file, so it wasn't sent.")
-      if (url) { const { data } = await sendMessage(match.id, myId, input || '', url, previewFile.type.startsWith('video') ? 'video' : 'image'); if (data) mergeMessages([data as Message]) }
-      else showError('Upload failed')
+      try {
+        const m = await uploadSecureFile(match.id, myId, previewFile, previewFile.type.startsWith('video') ? 'video' : 'image')
+        mergeMessages([await sendSecure(match.id, myId, other.id, { m, t: input.trim() || undefined })])
+      } catch (e) {
+        if (e instanceof Error && e.message === 'metadata_strip_failed') say("Couldn't remove location data from that file, so it wasn't sent.")
+        else secureError(e, 'Photo')
+      }
       setPreviewFile(null); setUploading(false)
     } else {
       const text = input
       setInput('')
-      const { data, error } = await sendMessage(match.id, myId, text)
-      if (error) { console.error('[chat] send failed', error); showError('Failed to send message'); setInput(text); return }
-      if (data) mergeMessages([data as Message])
+      try { mergeMessages([await sendSecure(match.id, myId, other.id, { t: text })]) }
+      catch (e) { secureError(e, 'Message'); setInput(text) }
       return
     }
     setInput('')
@@ -500,6 +522,7 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {messages.length === 0 && <div style={{ textAlign: 'center', color: C.dim, fontSize: 13, marginTop: 40 }}><div style={{ fontSize: 30, marginBottom: 8 }}>💬</div>Say something, or send a 🍑 sticker.</div>}
+        <div style={{ textAlign: 'center', fontSize: 11, color: C.dim, margin: '4px 0 10px' }}>🔒 Messages, photos and voice notes are end-to-end encrypted. Only you two can read them.</div>
         {messages.map(msg => {
           const mine = msg.sender_id === myId
           if (isStickerUrl(msg.media_url) && !msg.content) return (
@@ -558,6 +581,7 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
         </div>
       )}
 
+      {notice && <div role="status" style={{ margin: '0 12px 8px', padding: '10px 12px', borderRadius: 12, background: C.surf2, border: `1px solid ${C.border2}`, fontSize: 13, color: C.text }}>{notice}</div>}
       <div style={{ display: 'flex', gap: 8, padding: '10px 12px', background: C.surface, borderTop: `1px solid ${C.border}` }}>
         <input type="file" accept="image/*,video/*" ref={fileRef} style={{ display: 'none' }} onChange={e => e.target.files?.[0] && setPreviewFile(e.target.files[0])} />
         {!recording && !audioUrl && (
@@ -2626,6 +2650,12 @@ export default function App() {
     [nearby, blockedIds, passedIds, onlineIds],
   )
 
+  // End-to-end encryption: make sure this device has a chat key once the profile exists (keys belong to a profile)
+  useEffect(() => {
+    if (!user?.id || !myProfile?.name) return
+    ensureDeviceKey(user.id).catch(e => console.warn('[e2ee] key setup failed', e))
+  }, [user?.id, myProfile?.name])
+
   // Blocks live on the server now; pull them in, and upload any older ones that were only saved on this phone
   useEffect(() => {
     if (!user?.id) return
@@ -3466,8 +3496,12 @@ export default function App() {
             const other = selectedUser as Profile
             startConversation(user.id, other.id).then(async ({ data, error }) => {
               if (error || !data) { console.error('[tap] start failed', error); showError("Tap didn't send. Try again."); return }
-              const res = await sendMessage((data as Match).id, user.id, '', url, 'image')
-              if (res.error) { console.error('[tap] send failed', res.error); showError("Tap didn't send. Try again."); return }
+              try { await sendSecure((data as Match).id, user.id, other.id, { s: url }) }
+              catch (e) {
+                if (e instanceof NoKeysError) showError(`🔒 ${other.name} needs to open Hole Eaters once before you can send him a tap.`)
+                else { console.error('[tap] send failed', e); showError("Tap didn't send. Try again.") }
+                return
+              }
               showError(`🍑 Tap sent to ${other.name}`)  // error toast doubles as info toast app-wide
             })
           }}
