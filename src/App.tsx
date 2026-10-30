@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import maplibregl from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+// v6 loads its tile worker from a separate file; let Vite bundle it and point MapLibre at it
+import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+maplibregl.setWorkerUrl(mapWorkerUrl);
 import { ArrowUp, ChevronDown, Video, VideoOff } from 'lucide-react'
 import "maplibre-gl/dist/maplibre-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
-import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
+import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, ensureUserId, blockUser, getBlockedIds, postGlobalMessage, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
 import { claimStoredReferral } from './lib/referrals'
 import { presenceLabel } from './lib/presenceLabel'
@@ -1148,7 +1151,9 @@ function MediaUploadStep({ photoUrl, videoUrl, color, emoji, onPhoto, onVideo }:
     // Simulate progress (uploadMedia is single-shot, no real progress API)
     const ticker = setInterval(() => setProgress(p => Math.min(p + 15, 85)), 200)
 
-    const path = `profiles/${Date.now()}_${file.name.replace(/[^a-z0-9.]/gi, '_')}`
+    const uid = await ensureUserId()
+    if (!uid) { clearInterval(ticker); setUploading(false); setErr("Couldn't start your session. Check your connection."); return }
+    const path = `${uid}/profile/${Date.now()}_${file.name.replace(/[^a-z0-9.]/gi, '_')}`
     const { url, error } = await uploadMedia(file, path)
     clearInterval(ticker); setProgress(100)
 
@@ -1818,7 +1823,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
     }
     const loadTimer = setTimeout(() => { if (!map.loaded()) rebuild('style load timed out') }, MAP_LOAD_TIMEOUT_MS)
     map.on('webglcontextlost', () => rebuild('WebGL context lost'))
-    map.on('error', (e) => console.warn('[map]', e.error?.message ?? e))
+    map.on('error', (e: maplibregl.ErrorEvent) => console.warn('[map]', e.error?.message ?? e))
     map.on('load', () => {
       clearTimeout(loadTimer)
       triesRef.current = 0
@@ -2139,7 +2144,8 @@ function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boole
         sender: { name: '👻 Ghost', emoji: '👻', color: C.ghost, photo_url: null } as any,
       }
       setMessages(prev => [...prev, ghostMsg])
-      await sendGlobalMessage(userId, `👻 ${text}`)
+      const { error } = await postGlobalMessage(text, true)
+      if (error) showError("Ghost message didn't send.")
       setSending(false); inputRef.current?.focus()
       return
     }
@@ -3108,7 +3114,22 @@ export default function App() {
     [nearby, blockedIds, passedIds, onlineIds],
   )
 
+  // Blocks live on the server now; pull them in, and upload any older ones that were only saved on this phone
+  useEffect(() => {
+    if (!user?.id) return
+    getBlockedIds().then(serverIds => {
+      const server = new Set(serverIds)
+      setBlockedIds(prev => {
+        prev.forEach(id => { if (!server.has(id) && /^[0-9a-f-]{36}$/i.test(id)) blockUser(id) })
+        const next = new Set([...prev, ...server])
+        try { localStorage.setItem('he_blocked_ids', JSON.stringify([...next])) } catch { /* private mode */ }
+        return next
+      })
+    })
+  }, [user?.id])
+
   const handleBlock = (id: string) => {
+    blockUser(id).then(({ error }) => { if (error) console.error('[block] save failed', error) })
     setBlockedIds(prev => {
       const next = new Set(prev)
       next.add(id)
@@ -3531,15 +3552,17 @@ export default function App() {
 
   // Returns an error message for the onboarding screen, or null once the profile is persisted.
   const handleOnboardingComplete = async (profileData: Partial<Profile>): Promise<string | null> => {
-    let currentUser = user
+    // A guest session may already exist (started by the photo upload step)
+    let currentUser = user ?? (await supabase.auth.getSession()).data.session?.user ?? null
     if (!currentUser) {
       const { data, error: authErr } = await signInAnon()
       if (authErr || !data.user) {
         console.error('[onboarding] anonymous sign-in failed', authErr)
         return "Couldn't start your session. Check your connection and try again."
       }
-      currentUser = data.user; setUser(currentUser)
+      currentUser = data.user
     }
+    if (currentUser !== user) setUser(currentUser)
     const fullProfile = {
       id: currentUser.id,
       name: profileData.name?.trim() || 'Anonymous',
@@ -3587,7 +3610,7 @@ export default function App() {
     if (file.size > 15 * 1024 * 1024) { showError('Cover photo must be under 15MB'); return }
     setCoverUploading(true)
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')
-    const { url, error } = await uploadMedia(file, `profiles/cover_${user.id}_${Date.now()}.${ext}`)
+    const { url, error } = await uploadMedia(file, `${user.id}/cover/${Date.now()}.${ext}`)
     if (error || !url) { console.error('[cover] upload failed', error); showError('Cover upload failed. Try again.'); setCoverUploading(false); return }
     await handleProfileSave({ details: { ...(myProfile?.details ?? {}), cover_url: url } })
     setCoverUploading(false)

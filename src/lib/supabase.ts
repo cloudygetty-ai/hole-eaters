@@ -203,6 +203,29 @@ export function subscribeToPresence(cb: (profiles: Profile[]) => void) {
 }
 
 // ─── Media upload ─────────────────────────────────────────────────────────────
+// Uploads must go in the signed-in user's own folder (storage rules enforce it). During onboarding
+// there may be no session yet, so start the guest session here; onboarding then reuses it.
+export async function ensureUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession()
+  if (data.session?.user) return data.session.user.id
+  const { data: anon, error } = await supabase.auth.signInAnonymously()
+  return error ? null : anon.user?.id ?? null
+}
+
+// Server-side block: they disappear from your map and can't message, like, view or review you
+export async function blockUser(blocked: string) {
+  return supabase.from('blocks').upsert({ blocked }, { onConflict: 'blocker,blocked', ignoreDuplicates: true })
+}
+export async function getBlockedIds(): Promise<string[]> {
+  const { data } = await supabase.from('blocks').select('blocked')
+  return (data ?? []).map(r => r.blocked as string)
+}
+
+// Ghost posts are stored without a sender, so nobody can unmask them through the API
+export async function postGlobalMessage(content: string, ghost: boolean) {
+  return supabase.rpc('post_global_message', { p_content: content, p_ghost: ghost })
+}
+
 export async function uploadMedia(file: File, path: string) {
   const { data, error } = await supabase.storage.from('media').upload(path, file, { upsert: true })
   if (error) return { url: null, error }
