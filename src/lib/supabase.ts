@@ -27,6 +27,7 @@ export interface Profile {
   last_seen: string
   location?: { lat: number; lng: number } | null
   details?: ProfileDetails
+  ghost?: boolean // Ghost Mode: hidden from everyone's map (enforced by nearby_users)
 }
 
 export interface Match {
@@ -74,6 +75,15 @@ export async function signInEmail(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password })
 }
 
+// Passwordless: one-tap link for existing accounts. Lands on / which forwards auth callbacks to /app.
+export async function sendSignInLink(email: string) {
+  return supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: window.location.origin } })
+}
+
+// Every profile column except the raw `location`, which the database no longer lets clients read
+// (exact GPS). Use this instead of select('*') on profiles or the query is rejected.
+export const PROFILE_COLUMNS = 'id,name,age,role,bio,emoji,color,photo_url,video_url,is_anon,tags,cruising_status,online,last_seen,created_at,updated_at,can_host,details,ref_code,ghost'
+
 // Link anonymous session to email (preserves profile)
 export async function upgradeAnon(email: string, password: string) {
   return supabase.auth.updateUser({ email, password })
@@ -102,7 +112,7 @@ export async function upsertProfile(profile: Partial<Profile> & { id: string }) 
   return supabase
     .from('profiles')
     .upsert(profile, { onConflict: 'id' })
-    .select()
+    .select(PROFILE_COLUMNS)
     .single()
 }
 
@@ -131,7 +141,7 @@ export async function likeUser(fromId: string, toId: string) {
 export async function getLikesReceived(userId: string) {
   return supabase
     .from('likes')
-    .select('from_user, created_at, from_profile:profiles!likes_from_user_fkey(*)')
+    .select(`from_user, created_at, from_profile:profiles!likes_from_user_fkey(${PROFILE_COLUMNS})`)
     .eq('to_user', userId)
     .order('created_at', { ascending: false })
     .limit(100)
@@ -186,7 +196,7 @@ export function subscribeToMessages(matchId: string, cb: (msg: Message) => void)
 export function subscribeToPresence(cb: (profiles: Profile[]) => void) {
   return supabase.channel('online_users')
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, async () => {
-      const { data } = await supabase.from('profiles').select('*').eq('online', true)
+      const { data } = await supabase.from('profiles').select(PROFILE_COLUMNS).eq('online', true)
       if (data) cb(data as Profile[])
     })
     .subscribe()
@@ -289,7 +299,7 @@ export async function getAdminLog() {
 }
 
 export async function getAllProfiles() {
-  return supabase.from('profiles').select('*').order('created_at', { ascending: false })
+  return supabase.from('profiles').select(PROFILE_COLUMNS).order('created_at', { ascending: false })
 }
 
 export async function getBans() {

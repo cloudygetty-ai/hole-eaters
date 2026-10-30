@@ -3,7 +3,7 @@ import maplibregl from "maplibre-gl";
 import { ArrowUp, ChevronDown, Video, VideoOff } from 'lucide-react'
 import "maplibre-gl/dist/maplibre-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
-import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
+import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
 import { claimStoredReferral } from './lib/referrals'
 import { presenceLabel } from './lib/presenceLabel'
@@ -2479,6 +2479,16 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
     setLoading(false)
   }
 
+  // No password needed: emails a one-tap sign-in link to an existing account
+  const sendLink = async () => {
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setErr('Enter your email first'); return }
+    setLoading(true); setErr(''); setSuccess('')
+    const { error } = await sendSignInLink(email.trim())
+    setLoading(false)
+    if (error) setErr(/signups not allowed|not found/i.test(error.message) ? 'No account with that email. Sign up instead.' : error.message)
+    else setSuccess(`Sign-in link sent to ${email.trim()}. Open it on this device.`)
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <style>{GCSS}</style>
@@ -2497,6 +2507,11 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
           <button onClick={submit} disabled={loading} style={{ padding: '15px', borderRadius: 14, background: loading ? C.surf3 : C.accent, color: loading ? C.dim : '#fff', fontWeight: 800, fontSize: 16, opacity: loading ? 0.7 : 1, transition: 'all 0.15s', marginTop: 4 }}>
             {loading ? '...' : mode === 'signin' ? 'Sign In' : 'Create Account'}
           </button>
+          {mode === 'signin' && (
+            <button onClick={sendLink} disabled={loading} style={{ padding: '13px', borderRadius: 14, background: 'transparent', border: `1px solid ${C.border2}`, color: C.text, fontWeight: 700, fontSize: 14 }}>
+              ✉️ Email me a sign-in link
+            </button>
+          )}
         </div>
 
         <div style={{ textAlign: 'center', marginTop: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -3266,6 +3281,15 @@ export default function App() {
 
   // ── Ghost Mode ──
   const [isGhost, setIsGhost] = useState(false)
+  // Ghost Mode is saved so the database can hide you from other people's maps, not just your own screen.
+  // Wait until the saved value has loaded so the initial `false` never overwrites it.
+  const ghostLoadedRef = useRef(false)
+  useEffect(() => {
+    if (!user || !ghostLoadedRef.current) return
+    supabase.from('profiles').update({ ghost: isGhost }).eq('id', user.id).then(({ error }) => {
+      if (error) { console.error('[ghost] save failed', error); showError("Ghost Mode didn't save. Try again.") }
+    })
+  }, [isGhost, user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Join live presence while signed in; ghosts watch without being counted
   useEffect(() => {
@@ -3392,10 +3416,11 @@ export default function App() {
     if (!user) return
 
     // Fetch from Supabase — source of truth
-    Promise.resolve(supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()).then(async ({ data, error }) => {
+    Promise.resolve(supabase.from('profiles').select(PROFILE_COLUMNS).eq('id', user.id).maybeSingle()).then(async ({ data, error }) => {
       if (data) {
         // Fresh data from DB — update both state and cache
         setMyProfile(data)
+        setIsGhost(!!data.ghost)
         localStorage.setItem('he_local_profile', JSON.stringify(data))
         localStorage.setItem('he_profile_user_id', user.id)
       } else if (!error) {
@@ -3417,7 +3442,7 @@ export default function App() {
         }
       }
     }).catch(err => console.error('[profile] load failed', err))
-      .finally(() => setProfileReady(true))
+      .finally(() => { ghostLoadedRef.current = true; setProfileReady(true) })
   }, [user])
 
   // ── GPS: real coords → Supabase + nearby fetch + distance calc ──
