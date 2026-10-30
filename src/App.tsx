@@ -498,7 +498,7 @@ function ChatScreen({ match, myId, other, onBack, myPrivacy = {} }: { match: Mat
   const fmtMs = (ms: number) => `${Math.floor(ms/60000)}:${String(Math.floor((ms%60000)/1000)).padStart(2,'0')}`
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: C.bg }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: C.bg }}>
       <style>{GCSS}</style>
       {/* 1-on-1 video overlay */}
       {videoCall && (
@@ -3247,7 +3247,7 @@ export default function App() {
   const TAB_H = 60
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 480, margin: '0 auto', height: '100vh', background: C.bg, fontFamily: SANS, position: 'relative', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 480, margin: '0 auto', height: '100dvh', background: C.bg, fontFamily: SANS, position: 'relative', overflow: 'hidden' }}>
       <style>{GCSS}</style>
       <a href="#main-content" className="skip-link">Skip to content</a>
       <OfflineBanner />
@@ -3281,7 +3281,7 @@ export default function App() {
       {isGhost && <GhostBanner onDisable={() => setIsGhost(false)} />}
 
       {/* Main */}
-      <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' || screen === 'videos' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' || screen === 'videos' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, paddingBottom: screen === 'map' || screen === 'videos' ? 0 : `calc(${TAB_H}px + env(safe-area-inset-bottom))` }}>
         {screen === 'map' && (
           <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} gpsCoords={gpsCoords} isPremium={IS_PREMIUM} />
         )}
@@ -3507,7 +3507,7 @@ export default function App() {
       </main>
 
       {/* Bottom nav */}
-      <nav aria-label="Main navigation" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, height: TAB_H, background: C.surface, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 200, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <nav aria-label="Main navigation" style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 480, height: `calc(${TAB_H}px + env(safe-area-inset-bottom))`, boxSizing: 'border-box', background: C.surface, borderTop: `1px solid ${C.border}`, display: 'flex', zIndex: 200, paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {([
           { id: 'map', label: 'Map', icon: '📍' },
           { id: 'list', label: 'Nearby', icon: '👥' },

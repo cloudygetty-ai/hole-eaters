@@ -10,7 +10,8 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: 'http://localhost:4321',
+    // BASE_URL=https://www.hole-eaters.com pnpm test:e2e runs the same tests against a deployed site
+    baseURL: process.env.BASE_URL ?? 'http://localhost:4321',
     ...devices['Pixel 7'],
     geolocation: { latitude: 40.7484, longitude: -73.9857 },
     timezoneId: 'America/Chicago',
@@ -19,7 +20,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
     launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
   },
-  webServer: {
+  webServer: process.env.BASE_URL ? undefined : {
     command: 'pnpm build && pnpm exec vite preview --port 4321 --strictPort',
     url: 'http://localhost:4321/app',
     reuseExistingServer: !process.env.CI,
