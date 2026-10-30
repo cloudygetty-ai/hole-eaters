@@ -3,25 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <!-- Returning members, installed PWAs, and auth callbacks skip the landing. Runs before paint. -->
-    <script>
-      (function () {
-        try {
-          var l = location, q = new URLSearchParams(l.search)
-          var ref = q.get('ref')
-          if (ref && /^[a-z0-9_-]{4,24}$/i.test(ref)) localStorage.setItem('he_ref', ref.toLowerCase())
-          var utm = q.get('utm_source')
-          if (utm) localStorage.setItem('he_src', utm.replace(/[^a-z0-9_.-]/gi, '').slice(0, 64))
-          if (q.has('home')) return
-          var standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
-          var authCallback = /access_token|refresh_token|type=recovery|error_description/.test(l.hash) || q.has('code')
-          var session = false
-          for (var i = 0; i < localStorage.length; i++) {
-            if (/^sb-.+-auth-token$/.test(localStorage.key(i) || '')) { session = true; break }
-          }
-          if (standalone || authCallback || session) l.replace('/app' + l.search + l.hash)
-        } catch (e) {}
-      })()
-    </script>
+    <script src="/boot.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#090608" />
     <meta name="color-scheme" content="dark" />

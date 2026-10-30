@@ -30,7 +30,12 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const url = new URL(event.notification.data?.url ?? '/', self.location.origin).href
+  // Only ever open pages on our own site, whatever the payload says
+  let url = new URL('/app', self.location.origin).href
+  try {
+    const target = new URL(event.notification.data?.url ?? '/app', self.location.origin)
+    if (target.origin === self.location.origin) url = target.href
+  } catch { /* malformed → /app */ }
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
