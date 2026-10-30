@@ -54,6 +54,27 @@ export class FakeBackend {
       get_reviews: (a, user) => this.t('reviews').filter(r => r.reviewee_id === a.target && !r.hidden)
         .map(r => ({ id: r.id, met: r.met, rating: r.rating, tags: r.tags ?? [], body: r.body, created_at: r.created_at, is_mine: r.reviewer_id === user })),
       flag_review: () => null,
+      my_private: (_a, user) => { const p = this.t('profiles').find(x => x.id === user); return p ? { age: p.age, privacy: p.privacy ?? {}, tz: p.tz ?? null } : null },
+      chat_prefs: (a) => ({ video: !this.t('profiles').find(x => x.id === a.other)?.privacy?.video_off }),
+      get_responsiveness: (a) => this.t('profiles').find(x => x.id === a.target)?.privacy?.hide_response_insight ? null : (this.t('profiles').find(x => x.id === a.target)?.reply_rate ?? null),
+      my_insights: (a, user) => {
+        const ids = new Set<string>([
+          ...this.t('profile_views').filter(v => v.viewed_id === user).map(v => v.viewer_id),
+          ...this.t('likes').filter(l => l.to_user === user).map(l => l.from_user),
+        ])
+        const people = this.t('profiles').filter(p => ids.has(p.id))
+        const count = (f: (p: Row) => string | null | undefined, skip: (p: Row) => boolean) =>
+          people.filter(p => !skip(p) && f(p)).reduce((o: Record<string, number>, p) => { const k = f(p)!; o[k] = (o[k] ?? 0) + 1; return o }, {})
+        const band = (age: number) => age < 26 ? '18-25' : age < 36 ? '26-35' : age < 46 ? '36-45' : age < 56 ? '46-55' : '56+'
+        return {
+          days: a.days ?? 30, views: this.t('profile_views').filter(v => v.viewed_id === user).length,
+          likes: this.t('likes').filter(l => l.to_user === user).length, messages: 0, people: ids.size,
+          by_role: count(p => p.role, p => !!p.privacy?.hide_from_community_insights),
+          by_body: count(p => p.details?.body, p => !!p.privacy?.hide_from_community_insights),
+          by_age: count(p => p.age ? band(p.age) : null, p => !!p.privacy?.hide_from_age_insights || !!p.privacy?.hide_age),
+          responsiveness: this.t('profiles').find(x => x.id === user)?.reply_rate ?? null,
+        }
+      },
       post_global_message: (a, user) => [this.insert('global_messages', { sender_id: a.p_ghost ? null : user, content: (a.p_ghost ? '👻 ' : '') + a.p_content })],
     }
   }

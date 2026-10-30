@@ -13,6 +13,7 @@ export default defineConfig({
     baseURL: 'http://localhost:4321',
     ...devices['Pixel 7'],
     geolocation: { latitude: 40.7484, longitude: -73.9857 },
+    timezoneId: 'America/Chicago',
     permissions: ['geolocation'],
     serviceWorkers: 'block',
     trace: 'retain-on-failure',

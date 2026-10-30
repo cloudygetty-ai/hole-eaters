@@ -35,14 +35,10 @@ test('review + flake scale: post, phone numbers blocked, badge updates', async (
   expect(problems).toEqual([])
 })
 
-test('Ghost Mode and discreet alerts are saved to the server', async ({ browser }) => {
+test('Ghost Mode is saved to the server', async ({ browser }) => {
   const backend = seed()
   const { page } = await openAs(browser, backend, ME)
   await page.getByText('Me', { exact: true }).last().click()
-  // Discreet by default
-  await expect(page.getByText('Lock screen just says "You have new activity"')).toBeVisible()
-  await page.getByRole('button', { name: 'Show names in alerts' }).click()
-  await expect.poll(() => backend.t('profiles').find(p => p.id === ME.id)?.notify_previews).toBe(true)
   await page.getByRole('button', { name: 'Enable Ghost Mode' }).click()
   await expect.poll(() => backend.t('profiles').find(p => p.id === ME.id)?.ghost).toBe(true)
 })

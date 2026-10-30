@@ -29,6 +29,8 @@ export interface Profile {
   location?: { lat: number; lng: number } | null
   details?: ProfileDetails
   ghost?: boolean // Ghost Mode: hidden from everyone's map (enforced by nearby_users)
+  privacy?: Privacy
+  tz?: string | null
   notify_previews?: boolean // lock-screen alerts show names/previews; off = "You have new activity"
 }
 
@@ -83,8 +85,9 @@ export async function sendSignInLink(email: string) {
 }
 
 // Every profile column except the raw `location`, which the database no longer lets clients read
-// (exact GPS). Use this instead of select('*') on profiles or the query is rejected.
-export const PROFILE_COLUMNS = 'id,name,age,role,bio,emoji,color,photo_url,video_url,is_anon,tags,cruising_status,online,last_seen,created_at,updated_at,can_host,details,ref_code,ghost,notify_previews'
+// (exact GPS). `age` is read from age_shown, which is blank when that person hides their age; your own
+// real age comes from getMyPrivate(). Use this instead of select('*') on profiles or the query is rejected.
+export const PROFILE_COLUMNS = 'id,name,age:age_shown,role,bio,emoji,color,photo_url,video_url,is_anon,tags,cruising_status,online,last_seen,created_at,updated_at,can_host,details,ref_code,ghost,notify_previews'
 
 // Link anonymous session to email (preserves profile)
 export async function upgradeAnon(email: string, password: string) {
@@ -116,6 +119,8 @@ export async function upsertProfile(profile: Partial<Profile> & { id: string }) 
     .upsert(profile, { onConflict: 'id' })
     .select(PROFILE_COLUMNS)
     .single()
+    // Keep your own real age in the app even when it's hidden from others
+    .then(res => (res.data && profile.age != null ? { ...res, data: { ...(res.data as unknown as Profile), age: profile.age } } : res))
 }
 
 export async function updateLocation(id: string, lat: number, lng: number) {
@@ -205,6 +210,47 @@ export function subscribeToPresence(cb: (profiles: Profile[]) => void) {
 }
 
 // ─── Media upload ─────────────────────────────────────────────────────────────
+// ─── Privacy settings + insights ───────────────────────────────────────────────
+export interface Privacy {
+  hide_age?: boolean; hide_distance?: boolean; stealth?: boolean; quiet_hours?: boolean; video_off?: boolean; blur_media?: boolean
+  hide_response_insight?: boolean; hide_from_community_insights?: boolean; hide_from_age_insights?: boolean
+}
+
+/** Your own real age, settings and time zone (other people can't read these). */
+export async function getMyPrivate(): Promise<{ age: number | null; privacy: Privacy; tz: string | null } | null> {
+  const { data } = await supabase.rpc('my_private')
+  return (data as { age: number | null; privacy: Privacy; tz: string | null } | null) ?? null
+}
+
+export async function savePrivacy(userId: string, privacy: Privacy) {
+  return supabase.from('profiles').update({ privacy }).eq('id', userId)
+}
+
+export async function saveTimezone(userId: string, tz: string) {
+  return supabase.from('profiles').update({ tz }).eq('id', userId)
+}
+
+export interface Insights {
+  days: number; views: number; likes: number; messages: number; people: number
+  by_role: Record<string, number>; by_body: Record<string, number>; by_age: Record<string, number>
+  responsiveness: number | null
+}
+export async function getInsights(days = 30): Promise<Insights | null> {
+  const { data } = await supabase.rpc('my_insights', { days })
+  return (data as Insights | null) ?? null
+}
+
+/** Someone's reply rate 1–10 (null if they hide it or don't have enough chats yet). */
+export async function getResponsiveness(target: string): Promise<number | null> {
+  const { data } = await supabase.rpc('get_responsiveness', { target })
+  return typeof data === 'number' ? data : null
+}
+
+export async function getChatPrefs(other: string): Promise<{ video: boolean }> {
+  const { data } = await supabase.rpc('chat_prefs', { other })
+  return (data as { video: boolean } | null) ?? { video: true }
+}
+
 // ─── Private chat media ───────────────────────────────────────────────────────
 // Chat photos, videos and voice notes go to the private `chat` bucket at {matchId}/{senderId}/{file}.
 // Only the two people in the chat can open them, through links that expire.
@@ -304,7 +350,7 @@ export async function getReports(status?: ReportStatus) {
   let q = supabase.from('reports').select(`
     *,
     reporter:profiles!reports_reporter_id_fkey(id,name,emoji,color),
-    reported:profiles!reports_reported_id_fkey(id,name,emoji,color,photo_url,bio,role,age,tags)
+    reported:profiles!reports_reported_id_fkey(id,name,emoji,color,photo_url,bio,role,age:age_shown,tags)
   `).order('created_at', { ascending: false })
   if (status) q = q.eq('status', status)
   return q

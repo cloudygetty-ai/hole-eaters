@@ -6,7 +6,7 @@ maplibregl.setWorkerUrl(mapWorkerUrl);
 import { ArrowUp, ChevronDown, Video, VideoOff } from 'lucide-react'
 import "maplibre-gl/dist/maplibre-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
-import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, ensureUserId, signChatMedia, blockUser, getBlockedIds, postGlobalMessage, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
+import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, getMyPrivate, savePrivacy, saveTimezone, getResponsiveness, getChatPrefs, type Privacy, ensureUserId, signChatMedia, blockUser, getBlockedIds, postGlobalMessage, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
 import { claimStoredReferral } from './lib/referrals'
 import { presenceLabel } from './lib/presenceLabel'
@@ -17,6 +17,9 @@ import { CoverBanner } from './components/CoverBanner'
 import { ReviewsPanel, ReviewBadge, MyReviewsCard, type ReviewsTheme } from './components/Reviews'
 import { sendSecure, uploadSecureFile, viewMessage, fileUrl, NoKeysError, type ChatView } from './lib/secureChat'
 import { ensureDeviceKey } from './lib/e2ee'
+import { PrivacySettings, LockScreen, type PrivacyTheme } from './components/PrivacySettings'
+import { Insights } from './components/Insights'
+import { lockEnabled, checkPin, clearPin, watchBackground } from './lib/appLock'
 import { InstallPrompt } from './components/InstallPrompt'
 import { StickerPicker } from './components/StickerPicker'
 import { isStickerUrl } from './lib/stickers'
@@ -35,6 +38,7 @@ const C = {
 }
 const DT: DetailsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim }
 const FONT = "'DM Mono', 'Fira Code', monospace"
+const PT: PrivacyTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green }
 const RT: ReviewsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, green: C.green, amber: C.amber, orange: C.orange, red: '#ef4444' }
 const VT: VideoTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, dim: C.dim, muted: C.muted, accent: C.accent, font: FONT }
 const APP_VERSION = '1.0.0'
@@ -225,6 +229,8 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
   const [reportSent, setReportSent] = useState(false)
   const [blocked, setBlocked] = useState(false)
   const [reviewSummary, setReviewSummary] = useState<ReviewSummary | null>(null)
+  const [replyRate, setReplyRate] = useState<number | null>(null)
+  useEffect(() => { if (!user.isSeed && myId) getResponsiveness(user.id).then(setReplyRate) }, [user.id, user.isSeed, myId])
 
   // Header badge (★ + flake level) loads with the drawer; the Reviews tab refreshes it after edits
   useEffect(() => {
@@ -259,6 +265,11 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
                 <span style={{ marginLeft: 'auto', fontSize: 12, color: user.color, background: `${user.color}22`, padding: '3px 10px', borderRadius: 20, fontWeight: 600 }}>{user.role}</span>
               </div>
               <ReviewBadge summary={reviewSummary} theme={RT} onClick={() => setTab('reviews')} />
+              {replyRate != null && (
+                <div style={{ display: 'inline-block', fontSize: 12, color: C.muted, background: C.surf3, padding: '3px 10px', borderRadius: 10, marginBottom: 10 }}>
+                  💬 {replyRate >= 8 ? 'Replies to almost everyone' : replyRate >= 5 ? 'Replies to about half' : 'Replies selectively'} · {replyRate}/10
+                </div>
+              )}
               <p style={{ color: C.muted, fontSize: 14, marginBottom: 14, lineHeight: 1.5 }}>{user.bio || 'No bio.'}</p>
               {user.tags?.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -331,7 +342,11 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
 }
 
 // ─── Chat Screen ──────────────────────────────────────────────────────────────
-function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string; other: Profile; onBack: () => void }) {
+function ChatScreen({ match, myId, other, onBack, myPrivacy = {} }: { match: Match; myId: string; other: Profile; onBack: () => void; myPrivacy?: Privacy }) {
+  // Video calls only when neither of you turned them off; received photos blurred until tapped if you asked
+  const [videoAllowed, setVideoAllowed] = useState(!myPrivacy.video_off)
+  useEffect(() => { if (!myPrivacy.video_off) getChatPrefs(other.id).then(p => setVideoAllowed(p.video)) }, [other.id, myPrivacy.video_off])
+  const [revealed, setRevealed] = useState<Set<string>>(new Set())
   const [messages, setMessages] = useState<ChatView[]>([])
   // Decrypted attachments → local blob: URLs (decrypted on this device only)
   const [files, setFiles] = useState<Record<string, string>>({})
@@ -514,11 +529,11 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
           <div style={{ fontWeight: 700, fontSize: 15 }}>{other.name}</div>
           <div style={{ fontSize: 11, color: other.online ? C.green : C.dim }}>{other.online ? 'Online' : 'Offline'}</div>
         </div>
-        <button
+        {videoAllowed && <button
           aria-label="Start video call"
           onClick={() => setVideoCall(v => !v)}
           style={{ width: 36, height: 36, borderRadius: 10, background: videoCall ? C.accent : C.surf2, border: `1px solid ${videoCall ? C.accent : C.border2}`, color: videoCall ? '#fff' : C.muted, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-        >📹</button>
+        >📹</button>}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {messages.length === 0 && <div style={{ textAlign: 'center', color: C.dim, fontSize: 13, marginTop: 40 }}><div style={{ fontSize: 30, marginBottom: 8 }}>💬</div>Say something, or send a 🍑 sticker.</div>}
@@ -540,7 +555,18 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
                     <audio src={mediaSrc(msg.media_url)} controls style={{ height: 32, flex: 1, accentColor: mine ? '#fff' : C.accent }} />
                   </div>
                 )}
-                {msg.media_type !== 'audio' && msg.media_url && (msg.media_type === 'video' ? <video src={mediaSrc(msg.media_url)} controls style={{ width: '100%', borderRadius: 12, maxHeight: 220 }} /> : <img src={mediaSrc(msg.media_url)} style={{ width: '100%', borderRadius: 12, maxHeight: 220, objectFit: 'cover', display: 'block' }} alt="" />)}
+                {msg.media_type !== 'audio' && msg.media_url && (() => {
+                  const blurred = !!myPrivacy.blur_media && !mine && !revealed.has(msg.id)
+                  const media = msg.media_type === 'video'
+                    ? <video src={mediaSrc(msg.media_url)} controls={!blurred} style={{ width: '100%', borderRadius: 12, maxHeight: 220, filter: blurred ? 'blur(24px)' : 'none' }} />
+                    : <img src={mediaSrc(msg.media_url)} style={{ width: '100%', borderRadius: 12, maxHeight: 220, objectFit: 'cover', display: 'block', filter: blurred ? 'blur(24px)' : 'none' }} alt="" />
+                  return blurred
+                    ? <button aria-label="Tap to show photo" onClick={() => setRevealed(prev => new Set(prev).add(msg.id))} style={{ position: 'relative', display: 'block', width: '100%', padding: 0, overflow: 'hidden', borderRadius: 12 }}>
+                        {media}
+                        <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 13, textShadow: '0 1px 4px #000' }}>👁 Tap to show</span>
+                      </button>
+                    : media
+                })()}
                 {msg.content && <div style={{ padding: msg.media_url ? '8px 10px 6px' : '0', fontSize: 14, lineHeight: 1.45 }}>{msg.content}</div>}
               </div>
               {mine && <div style={{ fontSize: 10, color: msg.read_at ? C.green : C.dim, marginTop: 2, marginRight: 4 }}>{msg.read_at ? '✓✓ Read' : '✓ Sent'}</div>}
@@ -2416,7 +2442,7 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
                 <Avatar user={u} size={36} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700 }}>{u.name}</div>
-                  <div style={{ fontSize: 11, color: C.dim }}>{u.role} · {u.age} · {u.online ? '🟢 online' : '⚫ offline'}</div>
+                  <div style={{ fontSize: 11, color: C.dim }}>{[u.role, u.age, u.online ? '🟢 online' : '⚫ offline'].filter(Boolean).join(' · ')}</div>
                 </div>
                 <button onClick={() => handleBan(u.id, 'admin action')} style={{ padding: '5px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: 11, fontWeight: 700 }}>Ban</button>
               </div>
@@ -2856,6 +2882,11 @@ export default function App() {
 
   // ── Ghost Mode ──
   const [isGhost, setIsGhost] = useState(false)
+  const [showPrivacy, setShowPrivacy] = useState(false)
+  const [showInsights, setShowInsights] = useState(false)
+  // Startup lock (PIN on this device): locked on launch, and again after a minute in the background
+  const [appLocked, setAppLocked] = useState(() => lockEnabled())
+  useEffect(() => watchBackground(() => setAppLocked(true)), [])
   // Ghost Mode is saved so the database can hide you from other people's maps, not just your own screen.
   // Wait until the saved value has loaded so the initial `false` never overwrites it.
   const ghostLoadedRef = useRef(false)
@@ -2996,6 +3027,14 @@ export default function App() {
         // Fresh data from DB — update both state and cache
         setMyProfile(data)
         setIsGhost(!!data.ghost)
+        // Real age + settings are owner-only; merge them in and keep the time zone current (for quiet hours)
+        getMyPrivate().then(priv => {
+          if (!priv) return
+          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || priv.tz
+          // Keep the fresh time zone in state too, so a later full-profile save can't put the old one back
+          setMyProfile(prev => prev ? { ...prev, age: priv.age ?? prev.age, privacy: priv.privacy ?? {}, tz } : prev)
+          if (tz && tz !== priv.tz) saveTimezone(user.id, tz)
+        })
         localStorage.setItem('he_local_profile', JSON.stringify(data))
         localStorage.setItem('he_profile_user_id', user.id)
       } else if (!error) {
@@ -3170,6 +3209,14 @@ export default function App() {
     setCoverUploading(false)
   }
 
+  const handlePrivacyChange = async (next: Privacy) => {
+    if (!user) return
+    const prev = myProfile?.privacy ?? {}
+    setMyProfile(p => p ? { ...p, privacy: next } : p)
+    const { error } = await savePrivacy(user.id, next)
+    if (error) { console.error('[privacy] save failed', error); setMyProfile(p => p ? { ...p, privacy: prev } : p); showError("Setting didn't save. Try again.") }
+  }
+
   const handleProfileSave = async (updated: Partial<Profile>) => {
     if (!user) return
     const merged = { ...myProfile, ...updated, id: user.id } as Profile & { id: string }
@@ -3183,8 +3230,17 @@ export default function App() {
     }
   }
 
+  if (appLocked) return (
+    <LockScreen theme={PT} check={checkPin} onUnlock={() => setAppLocked(false)}
+      onForgot={async () => {
+        if (!window.confirm('Sign out and remove the PIN? Guest accounts without an email can\'t be recovered.')) return
+        clearPin(); await supabase.auth.signOut().catch(() => {})
+        try { localStorage.removeItem('he_local_profile'); localStorage.removeItem('he_profile_user_id') } catch { /* noop */ }
+        window.location.reload()
+      }} />
+  )
   if (!(authReady && profileReady && splashMinDone)) return <Splash />
-  if (activeMatch) return <ChatScreen match={activeMatch.match} myId={user!.id} other={activeMatch.other} onBack={() => setActiveMatch(null)} />
+  if (activeMatch) return <ChatScreen match={activeMatch.match} myId={user!.id} other={activeMatch.other} onBack={() => setActiveMatch(null)} myPrivacy={myProfile?.privacy ?? {}} />
   if (showAuth) return <AuthScreen onSuccess={() => setShowAuth(false)} />
   if (!myProfile?.name) return <Onboarding onComplete={handleOnboardingComplete} onSignIn={() => setShowAuth(true)} />
 
@@ -3341,6 +3397,19 @@ export default function App() {
             </div>
 
             <div style={{ padding: '0 16px 32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <button onClick={() => setShowInsights(true)} style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px', textAlign: 'left' }}>
+                  <div style={{ fontSize: 22 }}>📊</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginTop: 4 }}>Insights</div>
+                  <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>Who's into you</div>
+                </button>
+                <button onClick={() => setShowPrivacy(true)} style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px', textAlign: 'left' }}>
+                  <div style={{ fontSize: 22 }}>🔒</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginTop: 4 }}>Privacy settings</div>
+                  <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>Stealth, lock, hide age…</div>
+                </button>
+              </div>
+
               {user && <MyReviewsCard myId={user.id} theme={RT} surface={C.surf2} />}
 
               {/* Notifications */}
@@ -3364,20 +3433,6 @@ export default function App() {
                     <div style={{ position: 'absolute', top: 2, left: pushState === 'on' ? 22 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
                   </button>
                 )}
-              </div>
-
-              {/* Discreet alerts: off by default so a lock screen never outs anyone */}
-              <div style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 22 }}>🙈</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>Show names in alerts</div>
-                  <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
-                    {myProfile?.notify_previews ? 'Lock screen shows who liked or messaged you' : 'Lock screen just says "You have new activity"'}
-                  </div>
-                </div>
-                <button aria-label="Show names in alerts" aria-pressed={!!myProfile?.notify_previews} onClick={() => handleProfileSave({ notify_previews: !myProfile?.notify_previews })} style={{ width: 44, height: 24, borderRadius: 12, background: myProfile?.notify_previews ? C.accent : C.surf3, border: `1px solid ${myProfile?.notify_previews ? C.accent : C.border2}`, position: 'relative', flexShrink: 0 }}>
-                  <div style={{ position: 'absolute', top: 2, left: myProfile?.notify_previews ? 22 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
-                </button>
               </div>
 
               {/* Ghost Mode */}
@@ -3537,6 +3592,12 @@ export default function App() {
 
       {/* Admin dashboard */}
       {showAdmin && <AdminDashboard onClose={() => setShowAdmin(false)} />}
+      {showInsights && <Insights theme={PT} onClose={() => setShowInsights(false)} />}
+      {showPrivacy && (
+        <PrivacySettings theme={PT} privacy={myProfile?.privacy ?? {}} notifyPreviews={!!myProfile?.notify_previews} ghost={isGhost}
+          onChange={handlePrivacyChange} onNotifyPreviews={on => handleProfileSave({ notify_previews: on })} onGhost={setIsGhost}
+          onClose={() => setShowPrivacy(false)} />
+      )}
 
       {/* Version / changelog */}
       {showVersion && <VersionScreen onClose={() => setShowVersion(false)} />}
