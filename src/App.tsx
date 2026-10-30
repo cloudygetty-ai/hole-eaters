@@ -6,7 +6,7 @@ maplibregl.setWorkerUrl(mapWorkerUrl);
 import { ArrowUp, ChevronDown, Video, VideoOff } from 'lucide-react'
 import "maplibre-gl/dist/maplibre-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
-import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, ensureUserId, blockUser, getBlockedIds, postGlobalMessage, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
+import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, sendMessage, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, ensureUserId, uploadChatMedia, signChatMedia, blockUser, getBlockedIds, postGlobalMessage, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
 import { claimStoredReferral } from './lib/referrals'
 import { presenceLabel } from './lib/presenceLabel'
@@ -331,6 +331,15 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
 // ─── Chat Screen ──────────────────────────────────────────────────────────────
 function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string; other: Profile; onBack: () => void }) {
   const [messages, setMessages] = useState<Message[]>([])
+  // Private chat files → short-lived links. Re-signed every 50 min while the chat stays open.
+  const [signed, setSigned] = useState<Record<string, string>>({})
+  const [signEpoch, setSignEpoch] = useState(0)
+  useEffect(() => { const t = setInterval(() => { setSigned({}); setSignEpoch(e => e + 1) }, 50 * 60_000); return () => clearInterval(t) }, [])
+  useEffect(() => {
+    const need = messages.map(m => m.media_url).filter((u): u is string => !!u && u.startsWith('chat/') && !signed[u])
+    if (need.length) signChatMedia([...new Set(need)]).then(res => setSigned(prev => ({ ...prev, ...res })))
+  }, [messages, signEpoch]) // eslint-disable-line react-hooks/exhaustive-deps
+  const mediaSrc = (u: string | null | undefined) => (u && u.startsWith('chat/') ? signed[u] : u) ?? undefined
   const [input, setInput] = useState('')
   const [uploading, setUploading] = useState(false)
   const [previewFile, setPreviewFile] = useState<File | null>(null)
@@ -415,8 +424,7 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
     setUploading(true)
     const ext = audioBlob.type.includes('webm') ? 'webm' : 'm4a'
     const file = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: audioBlob.type })
-    const path = `${myId}/voice/${Date.now()}.${ext}`
-    const { url } = await uploadMedia(file, path)
+    const { path: url } = await uploadChatMedia(match.id, myId, file)
     if (url) { const { data } = await sendMessage(match.id, myId, '', url, 'audio'); if (data) mergeMessages([data as Message]) }
     else showError('Voice note failed to send')
     cancelVoice(); setUploading(false)
@@ -434,8 +442,8 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
     if (!input.trim() && !previewFile) return
     if (previewFile) {
       setUploading(true)
-      const path = `${myId}/${Date.now()}_${previewFile.name}`
-      const { url } = await uploadMedia(previewFile, path)
+      const { path: url, error: upErr } = await uploadChatMedia(match.id, myId, previewFile)
+      if (upErr?.message === 'metadata_strip_failed') showError("Couldn't remove location data from that file, so it wasn't sent.")
       if (url) { const { data } = await sendMessage(match.id, myId, input || '', url, previewFile.type.startsWith('video') ? 'video' : 'image'); if (data) mergeMessages([data as Message]) }
       else showError('Upload failed')
       setPreviewFile(null); setUploading(false)
@@ -506,10 +514,10 @@ function ChatScreen({ match, myId, other, onBack }: { match: Match; myId: string
                 {msg.media_type === 'audio' && msg.media_url && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 16 }}>🎙️</span>
-                    <audio src={msg.media_url} controls style={{ height: 32, flex: 1, accentColor: mine ? '#fff' : C.accent }} />
+                    <audio src={mediaSrc(msg.media_url)} controls style={{ height: 32, flex: 1, accentColor: mine ? '#fff' : C.accent }} />
                   </div>
                 )}
-                {msg.media_type !== 'audio' && msg.media_url && (msg.media_type === 'video' ? <video src={msg.media_url} controls style={{ width: '100%', borderRadius: 12, maxHeight: 220 }} /> : <img src={msg.media_url} style={{ width: '100%', borderRadius: 12, maxHeight: 220, objectFit: 'cover', display: 'block' }} alt="" />)}
+                {msg.media_type !== 'audio' && msg.media_url && (msg.media_type === 'video' ? <video src={mediaSrc(msg.media_url)} controls style={{ width: '100%', borderRadius: 12, maxHeight: 220 }} /> : <img src={mediaSrc(msg.media_url)} style={{ width: '100%', borderRadius: 12, maxHeight: 220, objectFit: 'cover', display: 'block' }} alt="" />)}
                 {msg.content && <div style={{ padding: msg.media_url ? '8px 10px 6px' : '0', fontSize: 14, lineHeight: 1.45 }}>{msg.content}</div>}
               </div>
               {mine && <div style={{ fontSize: 10, color: msg.read_at ? C.green : C.dim, marginTop: 2, marginRight: 4 }}>{msg.read_at ? '✓✓ Read' : '✓ Sent'}</div>}
@@ -3313,6 +3321,20 @@ export default function App() {
                     <div style={{ position: 'absolute', top: 2, left: pushState === 'on' ? 22 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
                   </button>
                 )}
+              </div>
+
+              {/* Discreet alerts: off by default so a lock screen never outs anyone */}
+              <div style={{ background: C.surf2, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 22 }}>🙈</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>Show names in alerts</div>
+                  <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
+                    {myProfile?.notify_previews ? 'Lock screen shows who liked or messaged you' : 'Lock screen just says "You have new activity"'}
+                  </div>
+                </div>
+                <button aria-label="Show names in alerts" aria-pressed={!!myProfile?.notify_previews} onClick={() => handleProfileSave({ notify_previews: !myProfile?.notify_previews })} style={{ width: 44, height: 24, borderRadius: 12, background: myProfile?.notify_previews ? C.accent : C.surf3, border: `1px solid ${myProfile?.notify_previews ? C.accent : C.border2}`, position: 'relative', flexShrink: 0 }}>
+                  <div style={{ position: 'absolute', top: 2, left: myProfile?.notify_previews ? 22 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
+                </button>
               </div>
 
               {/* Ghost Mode */}

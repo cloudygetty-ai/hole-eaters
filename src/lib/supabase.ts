@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { stripMetadata } from './stripMetadata'
 import type { ProfileDetails } from './profileDetails'
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/supabasePublic'
@@ -28,6 +29,7 @@ export interface Profile {
   location?: { lat: number; lng: number } | null
   details?: ProfileDetails
   ghost?: boolean // Ghost Mode: hidden from everyone's map (enforced by nearby_users)
+  notify_previews?: boolean // lock-screen alerts show names/previews; off = "You have new activity"
 }
 
 export interface Match {
@@ -82,7 +84,7 @@ export async function sendSignInLink(email: string) {
 
 // Every profile column except the raw `location`, which the database no longer lets clients read
 // (exact GPS). Use this instead of select('*') on profiles or the query is rejected.
-export const PROFILE_COLUMNS = 'id,name,age,role,bio,emoji,color,photo_url,video_url,is_anon,tags,cruising_status,online,last_seen,created_at,updated_at,can_host,details,ref_code,ghost'
+export const PROFILE_COLUMNS = 'id,name,age,role,bio,emoji,color,photo_url,video_url,is_anon,tags,cruising_status,online,last_seen,created_at,updated_at,can_host,details,ref_code,ghost,notify_previews'
 
 // Link anonymous session to email (preserves profile)
 export async function upgradeAnon(email: string, password: string) {
@@ -203,6 +205,29 @@ export function subscribeToPresence(cb: (profiles: Profile[]) => void) {
 }
 
 // ─── Media upload ─────────────────────────────────────────────────────────────
+// ─── Private chat media ───────────────────────────────────────────────────────
+// Chat photos, videos and voice notes go to the private `chat` bucket at {matchId}/{senderId}/{file}.
+// Only the two people in the chat can open them, through links that expire.
+// Messages store "chat/{matchId}/{senderId}/{file}" instead of a public URL.
+export async function uploadChatMedia(matchId: string, senderId: string, file: File): Promise<{ path: string | null; error: Error | null }> {
+  let clean: File
+  try { clean = await stripMetadata(file) } catch (e) { return { path: null, error: e as Error } }
+  const ext = (clean.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5)
+  const name = `${matchId}/${senderId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+  const { error } = await supabase.storage.from('chat').upload(name, clean, { contentType: clean.type })
+  return error ? { path: null, error } : { path: `chat/${name}`, error: null }
+}
+
+const SIGNED_TTL_S = 3600
+export async function signChatMedia(paths: string[]): Promise<Record<string, string>> {
+  const names = paths.filter(p => p.startsWith('chat/')).map(p => p.slice(5))
+  if (!names.length) return {}
+  const { data } = await supabase.storage.from('chat').createSignedUrls(names, SIGNED_TTL_S)
+  const out: Record<string, string> = {}
+  ;(data ?? []).forEach(d => { if (d.signedUrl && d.path) out[`chat/${d.path}`] = d.signedUrl })
+  return out
+}
+
 // Uploads must go in the signed-in user's own folder (storage rules enforce it). During onboarding
 // there may be no session yet, so start the guest session here; onboarding then reuses it.
 export async function ensureUserId(): Promise<string | null> {
@@ -227,7 +252,9 @@ export async function postGlobalMessage(content: string, ghost: boolean) {
 }
 
 export async function uploadMedia(file: File, path: string) {
-  const { data, error } = await supabase.storage.from('media').upload(path, file, { upsert: true })
+  let clean: File
+  try { clean = await stripMetadata(file) } catch (e) { return { url: null, error: e as Error } }
+  const { data, error } = await supabase.storage.from('media').upload(path, clean, { upsert: true })
   if (error) return { url: null, error }
   const { data: { publicUrl } } = supabase.storage.from('media').getPublicUrl(data.path)
   return { url: publicUrl, error: null }

@@ -1,4 +1,5 @@
 // Data layer for video posts. UI never talks to storage or the edge function directly.
+import { stripMetadata } from './stripMetadata'
 import { supabase, SUPABASE_URL } from './supabase'
 
 export type VideoStatus = 'uploading' | 'pending_review' | 'approved' | 'rejected' | 'removed'
@@ -90,6 +91,8 @@ export interface UploadInput {
 
 /** init → direct PUT to storage (XHR for progress) → finalize. Returns the new video id. */
 export async function uploadVideo({ file, caption, tags, performerIds, onProgress }: UploadInput): Promise<string> {
+  // Wipe the phone's location stamp first (same byte length, so the declared size still matches)
+  file = await stripMetadata(file)
   const { videoId, path, token } = await callFn<{ videoId: string; path: string; token: string }>({
     action: 'init', mime: file.type, size: file.size, caption, tags, performerIds, attest: true,
   })
