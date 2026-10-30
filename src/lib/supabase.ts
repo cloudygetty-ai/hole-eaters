@@ -113,14 +113,17 @@ export async function getProfileViews(userId: string) {
 }
 
 // ─── Profile helpers ──────────────────────────────────────────────────────────
+// Update-then-insert instead of an upsert: Postgres only allows "insert … on conflict update" when you can
+// read every column being written, and real age / settings / time zone are owner-only (not readable via
+// the API). A plain UPDATE of your own row doesn't need that.
 export async function upsertProfile(profile: Partial<Profile> & { id: string }) {
-  return supabase
-    .from('profiles')
-    .upsert(profile, { onConflict: 'id' })
-    .select(PROFILE_COLUMNS)
-    .single()
-    // Keep your own real age in the app even when it's hidden from others
-    .then(res => (res.data && profile.age != null ? { ...res, data: { ...(res.data as unknown as Profile), age: profile.age } } : res))
+  const { id, ...fields } = profile as Partial<Profile> & { id: string; age_shown?: unknown }
+  delete (fields as { age_shown?: unknown }).age_shown // generated column, never written
+  const keepAge = <T extends { data: unknown }>(res: T): T =>
+    res.data && profile.age != null ? { ...res, data: { ...(res.data as Profile), age: profile.age } } : res
+  const updated = await supabase.from('profiles').update(fields).eq('id', id).select(PROFILE_COLUMNS).maybeSingle()
+  if (updated.error || updated.data) return keepAge(updated)
+  return keepAge(await supabase.from('profiles').insert({ id, ...fields }).select(PROFILE_COLUMNS).single())
 }
 
 export async function updateLocation(id: string, lat: number, lng: number) {
