@@ -49,7 +49,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Skip when no database secret is configured
         if: env.SUPABASE_DB_URL == ''
-        run: echo "Set the SUPABASE_DB_URL secret to run database security tests."
+        run: echo "Database checks also run daily inside Supabase (pg_cron → security_check_runs). Set SUPABASE_DB_URL to run them here too."
       - name: Database security tests (rolled back)
         if: env.SUPABASE_DB_URL != ''
         run: |

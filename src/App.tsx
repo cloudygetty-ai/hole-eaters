@@ -2252,6 +2252,12 @@ function OfflineBanner() {
 function AdminDashboard({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<'stats' | 'reports' | 'reviews' | 'videos' | 'users' | 'bans'>('stats')
   const [flaggedReviews, setFlaggedReviews] = useState<FlaggedReview[]>([])
+  // Daily database security checks (pg_cron → security_check_runs)
+  const [secRun, setSecRun] = useState<{ ran_at: string; passed: number; failed: number; results: { ok: boolean; what: string }[] } | null>(null)
+  useEffect(() => {
+    supabase.from('security_check_runs').select('ran_at,passed,failed,results').order('ran_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => setSecRun(data as typeof secRun))
+  }, [])
   const [stats, setStats] = useState<any>(null)
   const [reports, setReports] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
@@ -2320,6 +2326,13 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
         {loading && <div style={{ textAlign: 'center', color: C.dim, padding: 40 }}>Loading...</div>}
 
         {/* Stats */}
+        {!loading && tab === 'stats' && secRun && (
+          <div style={{ background: C.surf2, border: `1px solid ${secRun.failed ? 'rgba(239,68,68,0.5)' : C.green + '55'}`, borderRadius: 14, padding: 16, marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{secRun.failed ? '⚠️' : '🛡️'} Security checks: {secRun.passed}/{secRun.passed + secRun.failed} passed</div>
+            <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>Runs daily · last {new Date(secRun.ran_at).toLocaleString()}</div>
+            {secRun.results.filter(r => !r.ok).map(r => <div key={r.what} style={{ fontSize: 12, color: '#ef4444', marginTop: 6 }}>✗ {r.what}</div>)}
+          </div>
+        )}
         {!loading && tab === 'stats' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {stats && Object.entries(stats).map(([key, val]) => (
