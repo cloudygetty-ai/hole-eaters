@@ -15,7 +15,6 @@ import { InviteBanner } from './components/InviteBanner'
 import type { User } from '@supabase/supabase-js'
 import { CoverBanner } from './components/CoverBanner'
 import { ReviewsPanel, ReviewBadge, MyReviewsCard, type ReviewsTheme } from './components/Reviews'
-import { sanitizeUserInput } from '../api/_lib/sanitize'
 import { InstallPrompt } from './components/InstallPrompt'
 import { StickerPicker } from './components/StickerPicker'
 import { isStickerUrl } from './lib/stickers'
@@ -41,7 +40,6 @@ const CHANGELOG: { v: string; date: string; items: string[] }[] = [
   { v: '1.0.0', date: '2026', items: [
     'Live Pulse Rooms — proximity-gated ephemeral chat rooms',
     'Ghost Mode — invisible on map, anonymous in Whore-izon',
-    'AI seed characters — Claude-powered personas on the map',
     'Voice notes in 1:1 chat',
     'Who Viewed Me log',
     'Email auth with password reset',
@@ -96,79 +94,8 @@ const GCSS = `
 interface PulseMsg { id: string; senderId: string; senderName: string; senderEmoji: string; senderColor: string; content: string; ts: number }
 interface PulseRoom { id: string; name: string; creatorId: string; creatorName: string; memberIds: string[]; messages: PulseMsg[]; expiresAt: number; pulseColor: string }
 
-// ─── Seed Engine Types ────────────────────────────────────────────────────────
-// Seed personas (prompts, style, rules) live server-side in api/_lib/seedPersonas.ts
-
-type SeedMemory = {
-  lastTopic?: string
-  lastInteraction?: number
-  userTone?: 'short' | 'neutral' | 'long'
-  messageCount: number
-}
-
-type SeedState = 'IDLE' | 'GREETING' | 'SMALL_TALK' | 'FOLLOW_UP'
-
-type SeedWithAI = Profile & {
-  isSeed: true
-  memory: SeedMemory
-  state: SeedState
-}
-
-// ─── State Machine ────────────────────────────────────────────────────────────
-function nextSeedState(current: SeedState): SeedState {
-  switch (current) {
-    case 'IDLE':      return 'GREETING'
-    case 'GREETING':  return 'SMALL_TALK'
-    case 'SMALL_TALK':return 'FOLLOW_UP'
-    case 'FOLLOW_UP': return 'FOLLOW_UP'
-  }
-}
-
-function updateSeedMemory(memory: SeedMemory, userMessage: string): SeedMemory {
-  return {
-    ...memory,
-    lastInteraction: Date.now(),
-    messageCount: (memory.messageCount ?? 0) + 1,
-    userTone: userMessage.length < 20 ? 'short' : userMessage.length > 120 ? 'long' : 'neutral',
-  }
-}
-
-
-const SEEDS: SeedWithAI[] = [
-  {
-    id: 's1', name: 'RawDog69', age: 34, emoji: '🍆', color: C.accent, role: 'Top',
-    bio: 'Raw top. No loads refused.', online: true, is_anon: false,
-    tags: ['raw','breeding','top','anon'], cruising_status: 'Looking to breed right now',
-    photo_url: null, video_url: null, last_seen: '', isSeed: true,
-    state: 'IDLE' as SeedState,
-    memory: { messageCount: 0 },
-  },
-  {
-    id: 's2', name: 'PigBottom88', age: 28, emoji: '🐷', color: C.purple, role: 'Bottom',
-    bio: 'Total cum pig. Door open. No limits.', online: true, is_anon: false,
-    tags: ['pig','cumdump','sub','bb'], cruising_status: 'Hosting · Come load me up',
-    photo_url: null, video_url: null, last_seen: '', isSeed: true,
-    state: 'IDLE' as SeedState,
-    memory: { messageCount: 0 },
-  },
-  {
-    id: 's3', name: 'DaddyBear', age: 47, emoji: '🐻', color: C.orange, role: 'Versatile',
-    bio: 'Thick bear daddy. Patient. You will remember this.', online: false, is_anon: false,
-    tags: ['daddy','bear','breeding','hung'], cruising_status: 'Looking for a boy to breed',
-    photo_url: null, video_url: null, last_seen: '', isSeed: true,
-    state: 'IDLE' as SeedState,
-    memory: { messageCount: 0 },
-  },
-  {
-    id: 's4', name: 'CuriousCub', age: 23, emoji: '🍑', color: '#10b981', role: 'Bottom',
-    bio: "Curious cub. First time bottom. Be gentle (or don't).", online: true, is_anon: false,
-    tags: ['curious','newbie','bottom','nervous'], cruising_status: 'First time… nervous but horny',
-    photo_url: null, video_url: null, last_seen: '', isSeed: true,
-    state: 'IDLE' as SeedState,
-    memory: { messageCount: 0 },
-  },
-]
-
+// Map entries are real profiles; `isSeed` is kept only as an optional flag on old code paths.
+type SeedWithAI = Profile & { isSeed?: boolean }
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 // Frame taken from the logo: bronze spiked star + jewelled ring. Large avatars (80+) get spikes and stones,
@@ -282,249 +209,6 @@ function MyPin({ profile, pos, onMove, isGhost }: { profile: Partial<Profile>; p
         <Avatar user={{ ...profile, online: true }} size={48} />
       </div>
       <div style={{ position: 'absolute', bottom: -4, left: '50%', transform: 'translateX(-50%)', width: 8, height: 8, borderRadius: '50%', background: profile.color, animation: 'ping 1.5s infinite', opacity: 0.5 }} />
-    </div>
-  )
-}
-
-// ─── Claude as Reply Generator ────────────────────────────────────────────────
-// State machine drives WHAT phase the conversation is in.
-// Claude generates the actual reply within that phase's constraints.
-
-interface SeedChatMsg { role: 'user' | 'assistant'; content: string }
-
-// ─── Injection Defense Layer ───────────────────────────────────────────────────
-// Sanitizes user input before it touches any prompt or API call.
-// Three gates: length cap → pattern strip → content fence.
-
-
-
-const RATE_LIMIT = {
-  windowMs: 60_000,    // 1 minute
-  maxCalls: 10,        // max 10 Claude calls per minute per seed
-  _log: new Map<string, number[]>(),
-}
-
-function checkRateLimit(seedId: string): boolean {
-  const now = Date.now()
-  const key = seedId
-  const log = RATE_LIMIT._log.get(key) ?? []
-  const recent = log.filter(t => now - t < RATE_LIMIT.windowMs)
-  RATE_LIMIT._log.set(key, recent)
-  if (recent.length >= RATE_LIMIT.maxCalls) return false
-  RATE_LIMIT._log.set(key, [...recent, now])
-  return true
-}
-
-
-
-// ─── State-machine prompt builder ─────────────────────────────────────────────
-
-async function callClaudeAsSeed(
-  seed: SeedWithAI,
-  state: SeedState,
-  memory: SeedMemory,
-  history: SeedChatMsg[],
-  rawUserMessage: string
-): Promise<string> {
-  // ── Rate limit gate ──
-  if (!checkRateLimit(seed.id)) {
-    return "hold on a sec"
-  }
-
-  // ── Sanitize gate — skip for system [open] trigger ──
-  const isSystemTrigger = rawUserMessage === '[open]'
-  let userMessage = rawUserMessage
-
-  if (!isSystemTrigger) {
-    const { clean, blocked, reason } = sanitizeUserInput(rawUserMessage)
-    if (blocked) {
-      console.warn('[SeedEngine] Input blocked:', reason)
-      // Return a deflection in-character rather than an error
-      const deflections: Record<string, string[]> = {
-        too_long:           ["you writing a novel?", "tl;dr babe", "chill with the paragraph"],
-        injection_pattern:  ["lmao no", "that's not how this works", "nice try"],
-        blocked_phrase:     ["what?", "say that again normally", "lost me there"],
-        empty_after_sanitize: ["...?", "say something", "you there?"],
-      }
-      const opts = deflections[reason ?? 'injection_pattern'] ?? ["..."]
-      return opts[Math.floor(Math.random() * opts.length)]
-    }
-    userMessage = clean
-  }
-
-  // The server owns the prompt: we only send which persona, the phase, and the chat text.
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return '...'
-  try {
-    const res = await fetch('/api/seed-chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-      body: JSON.stringify({ seedId: seed.id, state, tone: memory.userTone ?? 'neutral', history, message: userMessage }),
-    })
-    if (res.status === 429) return 'hold on a sec'
-    if (!res.ok) return '...'
-    const data = await res.json()
-    const reply: string = data?.reply ?? '...'
-    return reply.trim() || '...'
-  } catch {
-    return '...'
-  }
-}
-
-// ─── SeedChat Screen ──────────────────────────────────────────────────────────
-function SeedChat({ seed, onBack }: { seed: SeedWithAI; onBack: () => void }) {
-  const [history, setHistory] = useState<SeedChatMsg[]>([])
-  const [input, setInput] = useState('')
-  const [thinking, setThinking] = useState(false)
-  // Local mutable state for memory + FSM — doesn't need to be reactive
-  const stateRef = useRef<SeedState>('GREETING')
-  const memoryRef = useRef<SeedMemory>({ messageCount: 0 })
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  // Seed fires opener on mount (GREETING state, no user message yet)
-  useEffect(() => {
-    setThinking(true)
-    callClaudeAsSeed(seed, 'GREETING', memoryRef.current, [], '[open]')
-      .then(reply => {
-        stateRef.current = nextSeedState('GREETING')
-        setHistory([{ role: 'assistant', content: reply }])
-        setThinking(false)
-      })
-  }, [])
-
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [history, thinking])
-
-  const [inputBlocked, setInputBlocked] = useState<string | null>(null)
-
-  const send = async () => {
-    const text = input.trim()
-    if (!text || thinking) return
-
-    // UI-level sanitization — fast feedback before API call
-    const { clean, blocked, reason } = sanitizeUserInput(text)
-    if (blocked) {
-      const msg = reason === 'too_long' ? 'Message too long (400 char max)' : 'Message not allowed'
-      setInputBlocked(msg)
-      setTimeout(() => setInputBlocked(null), 2000)
-      return
-    }
-
-    setInput('')
-    setInputBlocked(null)
-
-    // Update memory with sanitized message
-    memoryRef.current = updateSeedMemory(memoryRef.current, clean)
-
-    const userMsg: SeedChatMsg = { role: 'user', content: clean }
-    const next = [...history, userMsg]
-    setHistory(next)
-    setThinking(true)
-
-    // Advance state machine, generate reply
-    const currentState = stateRef.current
-    const reply = await callClaudeAsSeed(seed, currentState, memoryRef.current, history, text)
-    stateRef.current = nextSeedState(currentState)
-
-
-    setHistory([...next, { role: 'assistant', content: reply }])
-    setThinking(false)
-    inputRef.current?.focus()
-  }
-
-  // State label for UI
-  const stateLabel: Record<SeedState, string> = {
-    IDLE: 'idle', GREETING: 'greeting', SMALL_TALK: 'engaged', FOLLOW_UP: 'escalating',
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: C.bg }}>
-      <style>{GCSS}</style>
-      <a href="#main-content" className="skip-link">Skip to content</a>
-      <OfflineBanner />
-
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-        <button aria-label="Go back" onClick={onBack} style={{ color: C.muted, fontSize: 20, lineHeight: 1, padding: '4px 8px 4px 0' }}>←</button>
-        <Avatar user={seed} size={36} />
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>{seed.name}</div>
-          <div style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: seed.color, display: 'inline-block', animation: 'pulse 2s infinite' }} />
-            <span style={{ color: seed.color }}>{seed.role}</span>
-            <span style={{ color: C.dim }}>·</span>
-            <span style={{ color: C.dim, fontFamily: FONT, fontSize: 10 }}>{stateLabel[stateRef.current]}</span>
-          </div>
-        </div>
-        <div style={{ fontSize: 9, color: C.dim, fontFamily: FONT, textAlign: 'right', lineHeight: 1.5, background: C.surf3, padding: '3px 7px', borderRadius: 6 }}>
-          AI<br/>seed
-        </div>
-      </div>
-
-      {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {history.map((msg, i) => {
-          const mine = msg.role === 'user'
-          return (
-            <div key={i} style={{ display: 'flex', gap: 8, flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end' }}>
-              {!mine && (
-                <div style={{ width: 30, height: 30, borderRadius: '50%', background: `${seed.color}22`, border: `1.5px solid ${seed.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0, boxShadow: `0 0 10px ${seed.color}22` }}>
-                  {seed.emoji}
-                </div>
-              )}
-              <div style={{ maxWidth: '75%' }}>
-                <div style={{
-                  background: mine ? C.accent : C.surf2,
-                  border: mine ? 'none' : `1px solid ${seed.color}22`,
-                  borderRadius: mine ? '16px 16px 4px 16px' : '4px 16px 16px 16px',
-                  padding: '10px 14px', fontSize: 14, lineHeight: 1.5, color: C.text,
-                  boxShadow: !mine ? `0 0 16px ${seed.color}0d` : 'none',
-                }}>
-                  {msg.content}
-                </div>
-              </div>
-            </div>
-          )
-        })}
-
-        {thinking && (<><span className="sr-only" aria-live="polite">{seed.name} is typing</span>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <div style={{ width: 30, height: 30, borderRadius: '50%', background: `${seed.color}22`, border: `1.5px solid ${seed.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0 }}>{seed.emoji}</div>
-            <div style={{ background: C.surf2, border: `1px solid ${seed.color}22`, borderRadius: '4px 16px 16px 16px', padding: '12px 16px', display: 'flex', gap: 5, alignItems: 'center' }}>
-              {[0, 0.2, 0.4].map((delay, i) => (
-                <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: seed.color, animation: `pulse 1s ease-in-out ${delay}s infinite` }} />
-              ))}
-            </div>
-          </div>
-        </>)}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input */}
-      <div style={{ borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-        {inputBlocked && (
-          <div style={{ padding: '6px 14px', background: 'rgba(239,68,68,0.12)', borderBottom: '1px solid rgba(239,68,68,0.2)', fontSize: 11, color: '#ef4444', fontFamily: FONT, animation: 'fadeIn 0.15s ease' }}>
-            ⛔ {inputBlocked}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 8, padding: '10px 12px', background: C.surface }}>
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={e => { setInput(e.target.value); if (inputBlocked) setInputBlocked(null) }}
-            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && !thinking && send()}
-            placeholder={thinking ? `${seed.name} is typing...` : 'Say something...'}
-            disabled={thinking}
-            maxLength={420}
-            style={{ flex: 1, background: inputBlocked ? 'rgba(239,68,68,0.06)' : C.surf2, border: `1px solid ${inputBlocked ? 'rgba(239,68,68,0.4)' : thinking ? seed.color + '44' : C.border2}`, borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 14, outline: 'none', transition: 'all 0.2s' }}
-          />
-          <button
-            onClick={send}
-            disabled={!input.trim() || thinking}
-            style={{ width: 40, height: 40, borderRadius: 10, background: input.trim() && !thinking ? C.accent : C.surf3, color: '#fff', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: thinking ? 0.4 : 1, transition: 'all 0.15s' }}
-          >↑</button>
-        </div>
-      </div>
     </div>
   )
 }
@@ -1737,7 +1421,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
     nearbyMarkersRef.current.clear()
     // Locations are rounded server-side (~100 m), so several people can share one point; fan them out
     const stackCount = new Map<string, number>()
-    nearby.forEach((u, idx) => {
+    nearby.forEach((u) => {
       let lat: number, lng: number
       const loc = (u as any).location as { lat: number; lng: number } | null
       if (loc?.lat && loc?.lng) {
@@ -1748,10 +1432,6 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
         const angle = (n % 6) * (Math.PI / 3)
         lat = loc.lat + Math.sin(angle) * ring
         lng = loc.lng + Math.cos(angle) * ring * 1.3
-      } else if ((u as any).isSeed) {
-        const angle = (idx / SEEDS.length) * Math.PI * 2
-        lat = anchorLat + Math.sin(angle) * 0.0022
-        lng = anchorLng + Math.cos(angle) * 0.0028
       } else return
       const el = document.createElement('div')
       el.style.cssText = `display:flex;flex-direction:column;align-items:center;cursor:pointer;`
@@ -2910,7 +2590,7 @@ export default function App() {
   const [profileReady, setProfileReady] = useState(false)
   const [splashMinDone, setSplashMinDone] = useState(false)
   const [myProfile, setMyProfile] = useState<Partial<Profile> | null>(null)
-  const [nearby, setNearby] = useState<(Profile & { isSeed?: boolean })[]>(SEEDS)
+  const [nearby, setNearby] = useState<(Profile & { isSeed?: boolean })[]>([])
   const [nearbyLoading, setNearbyLoading] = useState(true)
   const [myPos, setMyPos] = useState({ x: 50, y: 50 })
   const [screen, setScreen] = useState<Screen>(() => {
@@ -2989,7 +2669,6 @@ export default function App() {
   }
 
   const [activeMatch, setActiveMatch] = useState<{ match: Match; other: Profile } | null>(null)
-  const [activeSeedChat, setActiveSeedChat] = useState<SeedWithAI | null>(null)
   const [editingProfile, setEditingProfile] = useState(false)
   const [showPushPrompt, setShowPushPrompt] = useState(false)
   const [showInstall, setShowInstall] = useState(false)
@@ -3339,16 +3018,16 @@ export default function App() {
           })
           setNearbyDistances(dm)
         } else {
-          setNearby(SEEDS)
+          setNearby([])
           setNearbyLoading(false)
         }
       })
     }
 
-    if (!navigator.geolocation) { setNearby(SEEDS); setNearbyLoading(false); return }
+    if (!navigator.geolocation) { setNearby([]); setNearbyLoading(false); return }
 
     // Initial position
-    navigator.geolocation.getCurrentPosition(handlePosition, () => { setNearby(SEEDS); setNearbyLoading(false) }, { enableHighAccuracy: true })
+    navigator.geolocation.getCurrentPosition(handlePosition, () => { setNearby([]); setNearbyLoading(false) }, { enableHighAccuracy: true })
 
     // Watch for movement — re-fetch nearby every position update
     const watchId = navigator.geolocation.watchPosition(handlePosition, () => {}, {
@@ -3454,7 +3133,6 @@ export default function App() {
   }
 
   if (!(authReady && profileReady && splashMinDone)) return <Splash />
-  if (activeSeedChat) return <SeedChat seed={activeSeedChat} onBack={() => setActiveSeedChat(null)} />
   if (activeMatch) return <ChatScreen match={activeMatch.match} myId={user!.id} other={activeMatch.other} onBack={() => setActiveMatch(null)} />
   if (showAuth) return <AuthScreen onSuccess={() => setShowAuth(false)} />
   if (!myProfile?.name) return <Onboarding onComplete={handleOnboardingComplete} onSignIn={() => setShowAuth(true)} />
@@ -3752,10 +3430,7 @@ export default function App() {
             if (isGhost) setIsGhost(false)
           }}
           onMessage={() => {
-            if ((selectedUser as any).isSeed) {
-              setActiveSeedChat(selectedUser as SeedWithAI)
-              setSelectedUser(null)
-            } else if (user) {
+            if (user) {
               const other = selectedUser as Profile
               startConversation(user.id, other.id).then(({ data, error }) => {
                 if (error || !data) { console.error('[chat] start failed', error); showError("Couldn't open chat. Try again."); return }
