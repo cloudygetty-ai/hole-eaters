@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import * as maplibregl from "maplibre-gl";
+import { SpotSheet, AddSpotSheet, SpotsReviewQueue, type SpotsTheme } from './components/Spots'
+import { spotMarkerEl } from './lib/spotMarker'
+import { getSpots, requestVenues, shouldRequestVenues, type Spot } from './lib/spots'
 // v6 loads its tile worker from a separate file; let Vite bundle it and point MapLibre at it
 import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(mapWorkerUrl);
@@ -39,6 +42,7 @@ const C = {
 const DT: DetailsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim }
 const FONT = "'DM Mono', 'Fira Code', monospace"
 const PT: PrivacyTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green }
+const ST: SpotsTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green, amber: C.amber }
 const RT: ReviewsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, green: C.green, amber: C.amber, orange: C.orange, red: '#ef4444' }
 const VT: VideoTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, dim: C.dim, muted: C.muted, accent: C.accent, font: FONT }
 const APP_VERSION = '1.0.0'
@@ -1333,7 +1337,15 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   const myMarkerRef = useRef<maplibregl.Marker | null>(null)
   const nearbyMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const pulseMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
+  const spotMarkersRef = useRef<maplibregl.Marker[]>([])
   const [mapReady, setMapReady] = useState(false)
+  // Cruising spots layer
+  const [spots, setSpots] = useState<Spot[]>([])
+  const [showSpots, setShowSpots] = useState(() => { try { return localStorage.getItem('he_show_spots') !== '0' } catch { return true } })
+  const [openSpot, setOpenSpot] = useState<Spot | null>(null)
+  const [pickingSpot, setPickingSpot] = useState(false)
+  const [addSpotAt, setAddSpotAt] = useState<{ lat: number; lng: number } | null>(null)
+  const [spotsHint, setSpotsHint] = useState<string | null>(null)
   // Grid fallback only when the device has no WebGL or the map failed MAX_MAP_TRIES times
   const [mapFailed, setMapFailed] = useState(() => !hasWebGL())
   const triesRef = useRef(0)
@@ -1412,6 +1424,8 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       clearTimeout(loadTimer)
       nearbyMarkersRef.current.forEach(m => m.remove())
       pulseMarkersRef.current.forEach(m => m.remove())
+      spotMarkersRef.current.forEach(m => m.remove())
+      spotMarkersRef.current = []
       myMarkerRef.current?.remove()
       nearbyMarkersRef.current.clear()
       pulseMarkersRef.current.clear()
@@ -1451,6 +1465,50 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       duration: 800,
     })
   }, [streetMode, mapReady])
+
+  // ── Cruising spots: load what's in view after each pan/zoom ─────────────
+  const loadSpots = useCallback(async () => {
+    const map = mapRef.current
+    if (!map || !showSpots) return
+    if (map.getZoom() < 11) { setSpots([]); setSpotsHint('Zoom in to see spots'); return }
+    setSpotsHint(null)
+    const b = map.getBounds()
+    const box = { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() }
+    setSpots(await getSpots(box))
+    // First visit to an area: ask the server to fetch venues, then look again once they've likely landed
+    if (shouldRequestVenues(box) && await requestVenues(box) > 0) {
+      setTimeout(() => { if (mapRef.current === map) loadSpots() }, 45_000)
+      setTimeout(() => { if (mapRef.current === map) loadSpots() }, 120_000)
+    }
+  }, [showSpots])
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    let t: ReturnType<typeof setTimeout> | undefined
+    const onMove = () => { clearTimeout(t); t = setTimeout(loadSpots, 400) }
+    map.on('moveend', onMove)
+    loadSpots()
+    return () => { clearTimeout(t); map.off('moveend', onMove) }
+  }, [mapReady, loadSpots])
+
+  useEffect(() => {
+    spotMarkersRef.current.forEach(m => m.remove())
+    spotMarkersRef.current = []
+    if (!mapRef.current || !mapReady || !showSpots) return
+    spotMarkersRef.current = spots.map(s =>
+      new maplibregl.Marker({ element: spotMarkerEl(s, () => setOpenSpot(s)) }).setLngLat([s.lng, s.lat]).addTo(mapRef.current!))
+  }, [spots, showSpots, mapReady])
+
+  const toggleSpots = () => setShowSpots(v => {
+    try { localStorage.setItem('he_show_spots', v ? '0' : '1') } catch { /* noop */ }
+    if (v) setSpots([])
+    return !v
+  })
+  const confirmSpotPin = () => {
+    const c = mapRef.current?.getCenter()
+    setPickingSpot(false)
+    if (c) setAddSpotAt({ lat: c.lat, lng: c.lng })
+  }
 
   // ── My pin marker ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1616,6 +1674,25 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
         >
           📷
         </button>
+        <button
+          onClick={toggleSpots}
+          title={showSpots ? 'Hide cruising spots' : 'Show cruising spots'}
+          aria-label={showSpots ? 'Hide cruising spots' : 'Show cruising spots'}
+          aria-pressed={showSpots}
+          style={{ background: showSpots ? 'rgba(245,158,11,0.25)' : 'rgba(0,0,0,0.65)', backdropFilter: 'blur(10px)', border: `1px solid ${showSpots ? '#f59e0b' : C.border2}`, borderRadius: 10, padding: '6px 10px', fontSize: 16, color: '#fff', lineHeight: 1 }}
+        >
+          📍
+        </button>
+        {showSpots && (
+          <button
+            onClick={() => { setOpenSpot(null); setPickingSpot(true) }}
+            title="Add a spot"
+            aria-label="Add a spot"
+            style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(10px)', border: `1px solid ${C.border2}`, borderRadius: 10, padding: '6px 10px', fontSize: 16, color: '#fff', lineHeight: 1 }}
+          >
+            ＋
+          </button>
+        )}
         {!following && (
           <button
             onClick={recenter}
@@ -1629,11 +1706,30 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       </div>
 
       {/* Create Pulse Room FAB */}
-      {!isGhost && (
+      {!isGhost && !pickingSpot && (
         <button onClick={onCreatePulseRoom} style={{ position: 'absolute', bottom: 'calc(76px + env(safe-area-inset-bottom))', right: 14, background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`, border: 'none', borderRadius: 16, padding: '10px 16px', color: '#fff', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, boxShadow: `0 4px 20px ${C.accent}44`, zIndex: 30 }}>
           <span style={{ fontSize: 16 }}>📡</span> Start Pulse Room
         </button>
       )}
+
+      {showSpots && spotsHint && !pickingSpot && (
+        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.65)', border: `1px solid ${C.border2}`, borderRadius: 20, padding: '5px 12px', fontSize: 11, color: C.muted, fontFamily: FONT, zIndex: 30, pointerEvents: 'none' }}>{spotsHint}</div>
+      )}
+
+      {/* Add-spot picker: move the map under a fixed crosshair */}
+      {pickingSpot && (
+        <>
+          <div aria-hidden style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-100%)', fontSize: 34, zIndex: 31, pointerEvents: 'none', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,.6))' }}>📍</div>
+          <div style={{ position: 'absolute', left: 12, right: 12, bottom: 'calc(76px + env(safe-area-inset-bottom))', zIndex: 32, background: C.surface, border: `1px solid ${C.border2}`, borderRadius: 16, padding: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ flex: 1, fontSize: 12, color: C.muted }}>Move the map so the pin sits on the spot</div>
+            <button onClick={() => setPickingSpot(false)} style={{ padding: '9px 12px', borderRadius: 10, background: C.surf3, color: C.muted, fontSize: 13, fontWeight: 700 }}>Cancel</button>
+            <button onClick={confirmSpotPin} style={{ padding: '9px 12px', borderRadius: 10, background: '#f59e0b', color: '#1a1200', fontSize: 13, fontWeight: 800 }}>Pin here</button>
+          </div>
+        </>
+      )}
+      {openSpot && <SpotSheet key={openSpot.id} spot={openSpot} theme={ST} onClose={() => setOpenSpot(null)} onChanged={loadSpots} />}
+      {addSpotAt && <AddSpotSheet at={addSpotAt} theme={ST} onClose={() => setAddSpotAt(null)}
+        onAdded={() => { setAddSpotAt(null); showError('📍 Spot sent for review — only you can see it for now'); loadSpots() }} />}
 
       {/* Street View modal */}
       {showStreetView && gpsCoords && (
@@ -2276,7 +2372,8 @@ function OfflineBanner() {
 
 // ─── Admin Dashboard ──────────────────────────────────────────────────────────
 function AdminDashboard({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<'stats' | 'reports' | 'reviews' | 'videos' | 'users' | 'bans'>('stats')
+  const [tab, setTab] = useState<'stats' | 'reports' | 'reviews' | 'spots' | 'videos' | 'users' | 'bans'>('stats')
+  const [spotQueue, setSpotQueue] = useState<number | null>(null)
   const [flaggedReviews, setFlaggedReviews] = useState<FlaggedReview[]>([])
   // Daily database security checks (pg_cron → security_check_runs)
   const [secRun, setSecRun] = useState<{ ran_at: string; passed: number; failed: number; results: { ok: boolean; what: string }[] } | null>(null)
@@ -2327,6 +2424,7 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
     { id: 'stats', label: '📊 Stats' },
     { id: 'reports', label: `🚨 Reports${reports.length ? ` (${reports.length})` : ''}` },
     { id: 'reviews', label: `⭐ Reviews${flaggedReviews.length ? ` (${flaggedReviews.length})` : ''}` },
+    { id: 'spots', label: `📍 Spots${spotQueue ? ` (${spotQueue})` : ''}` },
     { id: 'videos', label: '🎬 Videos' },
     { id: 'users', label: '👥 Users' },
     { id: 'bans', label: '🚫 Bans' },
@@ -2405,6 +2503,9 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         )}
+
+        {/* Mounted while hidden too, so the tab shows its count */}
+        <div style={{ display: !loading && tab === 'spots' ? 'block' : 'none' }}><SpotsReviewQueue theme={ST} onCount={setSpotQueue} /></div>
 
         {!loading && tab === 'reviews' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

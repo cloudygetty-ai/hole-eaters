@@ -11,10 +11,15 @@ export const GPS_PHOTO = 'e2e/fixtures/gps-photo.jpg' // phone-style JPEG with E
 export const uid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 
 /** Opens the app in its own browser context as `user`, with CSP enforced and console errors collected. */
-export async function openAs(browser: Browser, backend: FakeBackend, user: FakeUser | null, opts: { path?: string; signedIn?: boolean } = {}) {
+export async function openAs(browser: Browser, backend: FakeBackend, user: FakeUser | null, opts: { path?: string; signedIn?: boolean; stubMap?: boolean } = {}) {
   const path = opts.path ?? '/app'
   const context = await browser.newContext()
   await backend.attach(context, user, { csp: CSP, signedIn: opts.signedIn })
+  // Blank map style so map tests don't depend on the tile server being reachable
+  if (opts.stubMap) await context.route(url => url.hostname === 'tiles.openfreemap.org', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ version: 8, sources: {}, layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#111' } }] }),
+  }))
   const page = await context.newPage()
   const problems: string[] = []
   page.on('pageerror', e => problems.push(`pageerror: ${e.message}`))

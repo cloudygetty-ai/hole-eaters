@@ -75,6 +75,17 @@ export class FakeBackend {
           responsiveness: this.t('profiles').find(x => x.id === user)?.reply_rate ?? null,
         }
       },
+      spots_in_view: (a, user) => this.t('spots').filter(s => s.lat >= a.p_south && s.lat <= a.p_north && s.lng >= a.p_west && s.lng <= a.p_east
+          && (s.status === 'approved' || s.created_by === user))
+        .map(s => ({ description: '', website: null, active_votes: 0, gone_votes: 0, my_vote: null, ...s,
+          here_now: this.t('spot_checkins').filter(c => c.spot_id === s.id).length,
+          checked_in: this.t('spot_checkins').some(c => c.spot_id === s.id && c.user_id === user), mine: s.created_by === user })),
+      request_venues: () => 0,
+      add_spot: (a, user) => this.insert('spots', { kind: a.p_kind, name: a.p_name, description: a.p_description, lat: a.p_lat, lng: a.p_lng, source: 'community', status: 'pending', created_by: user }).id,
+      check_in_spot: (a, user) => { this.insert('spot_checkins', { spot_id: a.p_spot, user_id: user }); return this.t('spot_checkins').filter(c => c.spot_id === a.p_spot).length },
+      check_out_spot: (a, user) => { this.tables.spot_checkins = this.t('spot_checkins').filter(c => !(c.spot_id === a.p_spot && c.user_id === user)); return null },
+      vote_spot: (a, user) => { this.insert('spot_votes', { spot_id: a.p_spot, user_id: user, active: a.p_active }); return null },
+      report_spot: (a, user) => { this.insert('spot_reports', { spot_id: a.p_spot, user_id: user, reason: a.p_reason }); return null },
       post_global_message: (a, user) => [this.insert('global_messages', { sender_id: a.p_ghost ? null : user, content: (a.p_ghost ? '👻 ' : '') + a.p_content })],
     }
   }
