@@ -32,6 +32,7 @@ export interface Profile {
   privacy?: Privacy
   tz?: string | null
   notify_previews?: boolean // lock-screen alerts show names/previews; off = "You have new activity"
+  anthem_url?: string | null // outbound music link card; validated by profiles_anthem_safe
 }
 
 export interface Match {
@@ -87,7 +88,7 @@ export async function sendSignInLink(email: string) {
 // Every profile column except the raw `location`, which the database no longer lets clients read
 // (exact GPS). `age` is read from age_shown, which is blank when that person hides their age; your own
 // real age comes from getMyPrivate(). Use this instead of select('*') on profiles or the query is rejected.
-export const PROFILE_COLUMNS = 'id,name,age:age_shown,role,bio,emoji,color,photo_url,video_url,is_anon,tags,cruising_status,online,last_seen,created_at,updated_at,can_host,details,ref_code,ghost,notify_previews'
+export const PROFILE_COLUMNS = 'id,name,age:age_shown,role,bio,emoji,color,photo_url,video_url,is_anon,tags,cruising_status,online,last_seen,created_at,updated_at,can_host,details,ref_code,ghost,notify_previews,anthem_url'
 
 // Link anonymous session to email (preserves profile)
 export async function upgradeAnon(email: string, password: string) {
