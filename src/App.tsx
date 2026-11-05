@@ -29,6 +29,8 @@ import { InstallPrompt } from './components/InstallPrompt'
 import { StickerPicker } from './components/StickerPicker'
 import { isStickerUrl } from './lib/stickers'
 import { ProfileDetailsFields, ProfileDetailsView, type DetailsTheme } from './components/ProfileDetails'
+import { AnthemCard, AnthemField } from './components/Anthem'
+import { anthemForSave } from './lib/anthem'
 import type { ProfileDetails } from './lib/profileDetails'
 import { VideoFeed, type VideoTheme } from './components/VideoFeed'
 import { VideoModeration } from './components/VideoModeration'
@@ -283,6 +285,7 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
                   {user.tags.map(tag => <span key={tag} style={{ fontSize: 11, color: C.dim, background: C.surf3, padding: '3px 9px', borderRadius: 12, fontFamily: FONT }}>{tag}</span>)}
                 </div>
               )}
+              <AnthemCard url={(user as Profile).anthem_url} theme={DT} />
               <ProfileDetailsView details={(user as Profile).details} theme={DT} />
             </div>
           )}
@@ -2637,6 +2640,7 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
     photo_url: profile.photo_url ?? null as string | null,
     video_url: profile.video_url ?? null as string | null,
     details: (profile.details ?? {}) as ProfileDetails,
+    anthem_url: profile.anthem_url ?? '',
   })
   const [newTag, setNewTag] = useState('')
   const [saving, setSaving] = useState(false)
@@ -2649,6 +2653,8 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
 
   const handleSave = async () => {
     if (!form.name.trim() || Number(form.age) < 18) return
+    const anthem_url = anthemForSave(form.anthem_url)
+    if (anthem_url === undefined) return // invalid link; AnthemField shows the reason
     setSaving(true)
     await onSave({
       name: form.name.trim(),
@@ -2661,6 +2667,7 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
       photo_url: form.photo_url,
       video_url: form.video_url,
       details: form.details,
+      anthem_url,
     })
     setSaving(false)
     setSaved(true)
@@ -2728,6 +2735,9 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
             <div style={{ fontSize: 11, color: C.dim, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Bio</div>
             <textarea value={form.bio} onChange={e => setForm(f => ({ ...f, bio: e.target.value }))} rows={3} maxLength={200} placeholder="Say something..." style={{ ...inputStyle, resize: 'none', lineHeight: 1.5 }} />
           </div>
+
+          {/* Anthem */}
+          <AnthemField value={form.anthem_url} onChange={anthem_url => setForm(f => ({ ...f, anthem_url }))} theme={DT} />
 
           {/* Tags */}
           <div>
@@ -3508,6 +3518,7 @@ export default function App() {
                     {myProfile.tags.map(t => <span key={t} style={{ fontSize: 11, color: C.dim, background: C.surf3, padding: '3px 9px', borderRadius: 12, fontFamily: FONT }}>{t}</span>)}
                   </div>
                 )}
+                <AnthemCard url={myProfile.anthem_url} theme={DT} />
                 <ProfileDetailsView details={myProfile.details} theme={DT} />
                 <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
                   <button onClick={() => setShowViewed(true)} style={{ padding: '9px 18px', borderRadius: 20, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 13, fontWeight: 600 }}>👁️ Views</button>
