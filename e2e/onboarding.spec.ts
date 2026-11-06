@@ -13,7 +13,12 @@ test('new person: setup → photo (location stripped) → map, one guest account
 
   await page.getByPlaceholder('Your name or handle').fill('SetupTest')
   await page.getByPlaceholder('Age (18+)').fill('30')
-  for (let i = 0; i < 6; i++) await page.getByText('Continue →').click()
+  await page.getByText('Continue →').click() // → role
+  await page.getByText('Continue →').click() // → welcome survey
+  await expect(page.getByText('First, the important question')).toBeVisible()
+  await page.getByRole('button', { name: 'Both', exact: true }).click()
+  await page.getByRole('button', { name: 'Face-sitting', exact: true }).click()
+  for (let i = 0; i < 5; i++) await page.getByText('Continue →').click() // stats, into, health, vibe → photo
 
   await page.locator('input[type=file]').first().setInputFiles(GPS_PHOTO)
   await expect.poll(() => [...backend.files.keys()].filter(k => k.startsWith(`media/${NEW.id}/profile/`)).length).toBe(1)
@@ -26,6 +31,9 @@ test('new person: setup → photo (location stripped) → map, one guest account
   await expect(page.getByText('Map', { exact: true }).last()).toBeVisible()
   await expect.poll(() => backend.t('profiles').find(p => p.id === NEW.id)?.name).toBe('SetupTest')
   expect(backend.t('profiles').find(p => p.id === NEW.id)?.photo_url).toContain(`/media/${NEW.id}/profile/`)
+  const saved = backend.t('profiles').find(p => p.id === NEW.id)?.details as { eat_role?: string; eat_positions?: string[] } | undefined
+  expect(saved?.eat_role).toBe('Both')                                   // welcome survey answers saved
+  expect(saved?.eat_positions).toEqual(['Face-sitting'])
   expect(signups.length).toBeLessThanOrEqual(1)
   // An encryption key for chats was created for the new profile
   await expect.poll(() => backend.t('user_keys').filter(k => k.user_id === NEW.id).length).toBe(1)
