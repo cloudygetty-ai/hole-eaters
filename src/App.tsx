@@ -868,7 +868,7 @@ function Onboarding({ onComplete, onSignIn }: { onComplete: (p: Partial<Profile>
   const inputStyle: React.CSSProperties = { background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 12, padding: '13px 16px', color: C.text, fontSize: 15, width: '100%', outline: 'none' }
 
   const steps = [
-    { title: "What do they call you?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Your name or handle" style={inputStyle} /><input value={form.age} onChange={e => setForm(f => ({ ...f, age: e.target.value }))} placeholder="Age (18+)" type="number" style={inputStyle} /></div>), valid: () => form.name.trim().length > 0 && Number(form.age) >= 18 },
+    { title: "What do they call you?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Your name or handle" style={inputStyle} /><input value={form.age} onChange={e => setForm(f => ({ ...f, age: e.target.value }))} placeholder="Age (18+)" type="number" style={inputStyle} /><div style={{ fontSize: 12, color: C.dim, lineHeight: 1.5 }}>By continuing you confirm you're 18 or older and agree to our <a href="/terms" target="_blank" rel="noopener" style={{ color: C.muted }}>Terms</a> and <a href="/privacy" target="_blank" rel="noopener" style={{ color: C.muted }}>Privacy Policy</a>.</div></div>), valid: () => form.name.trim().length > 0 && Number(form.age) >= 18 },
     { title: "Your role?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{ROLES.map(r => (<button key={r} onClick={() => setForm(f => ({ ...f, role: r }))} style={{ padding: '14px', borderRadius: 12, background: form.role === r ? `${C.accent}22` : C.surf3, border: `1px solid ${form.role === r ? C.accent : C.border2}`, color: form.role === r ? C.accent : C.text, fontWeight: form.role === r ? 700 : 400, fontSize: 15, textAlign: 'left' }}>{r}</button>))}</div>), valid: () => true },
     { title: "Welcome to Hole Eaters 🍑 First, the important question", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['eating']} theme={DT} />), valid: () => true },
     { title: "Your stats", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['stats']} theme={DT} />), valid: () => true },
@@ -3772,7 +3772,13 @@ export default function App() {
       {showPrivacy && (
         <PrivacySettings theme={PT} privacy={myProfile?.privacy ?? {}} notifyPreviews={!!myProfile?.notify_previews} ghost={isGhost}
           onChange={handlePrivacyChange} onNotifyPreviews={on => handleProfileSave({ notify_previews: on })} onGhost={setIsGhost}
-          onClose={() => setShowPrivacy(false)} />
+          onClose={() => setShowPrivacy(false)}
+          onDeleted={async () => {
+            // Account is already gone server-side; wipe every local trace and land on the public page.
+            clearPin(); await supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+            try { localStorage.clear(); sessionStorage.clear() } catch { /* private mode */ }
+            window.location.replace('/?home&deleted=1')
+          }} />
       )}
 
       {/* Version / changelog */}

@@ -1,0 +1,19 @@
+/* Legal pages: same Velvet Room tokens as the landing, tuned for long-form reading. */
+@import '../landing/landing.css';
+.legal { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; color: var(--ivory); font: 400 1rem/1.7 var(--ui); }
+.legal h1 { font: 700 clamp(2rem, 6vw, 2.75rem)/1.1 var(--display); margin: 8px 0 4px; }
+.legal .updated { color: var(--smoke); font: 500 0.8125rem/1 var(--mono); margin-bottom: 28px; }
+.legal h2 { font: 700 1.375rem/1.25 var(--display); color: var(--brass-lift); margin: 40px 0 10px; padding-top: 16px; border-top: 1px solid var(--hairline); }
+.legal h3 { font: 700 1rem/1.4 var(--ui); margin: 20px 0 6px; }
+.legal p, .legal li { color: #d9cfc4; }
+.legal ul { padding-left: 1.2em; }
+.legal li { margin: 4px 0; }
+.legal a { color: var(--brass-lift); }
+.legal strong { color: var(--ivory); }
+.legal .summary { background: var(--velvet); border: 1px solid var(--hairline); border-radius: 16px; padding: 16px 18px; margin: 0 0 8px; }
+.legal .summary li { margin: 6px 0; }
+.legal table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; margin: 10px 0; }
+.legal th, .legal td { text-align: left; vertical-align: top; padding: 10px 8px; border-bottom: 1px solid var(--hairline); }
+.legal th { color: var(--brass-lift); font-weight: 600; }
+.legal-nav { display: flex; gap: 18px; justify-content: center; padding: 18px; font-size: 0.875rem; }
+.legal-nav a { color: var(--smoke); }
