@@ -21,6 +21,8 @@ import { ReviewsPanel, ReviewBadge, MyReviewsCard, type ReviewsTheme } from './c
 import { sendSecure, uploadSecureFile, viewMessage, fileUrl, NoKeysError, type ChatView } from './lib/secureChat'
 import { TodCard, TodPicker, type TodTheme } from './components/TruthOrDare'
 import { pickTod, todFallback, todKey, type TodKind, type TodLevel } from './lib/truthOrDare'
+import { SeaBattleSheet, SeaChip, type SeaTheme } from './components/SeaBattle'
+import { seaFallback, type SeaEvent, type SeaMsg } from './lib/seaBattle'
 import { ensureDeviceKey } from './lib/e2ee'
 import { PrivacySettings, LockScreen, type PrivacyTheme } from './components/PrivacySettings'
 import { Insights } from './components/Insights'
@@ -46,6 +48,7 @@ const C = {
 const DT: DetailsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim }
 const FONT = "'DM Mono', 'Fira Code', monospace"
 const TT: TodTheme = { accent: C.accent, surf2: C.surf2, surf3: C.surf3, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim }
+const SBT: SeaTheme = { bg: C.bg, accent: C.accent, green: C.green, surf2: C.surf2, surf3: C.surf3, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim }
 const PT: PrivacyTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green }
 const ST: SpotsTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green, amber: C.amber }
 const RT: ReviewsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, green: C.green, amber: C.amber, orange: C.orange, red: '#ef4444' }
@@ -477,6 +480,14 @@ function ChatScreen({ match, myId, other, onBack, myPrivacy = {} }: { match: Mat
   }
 
   const [showGame, setShowGame] = useState(false)
+  const [gameMenu, setGameMenu] = useState(false)
+  const [showSea, setShowSea] = useState(false)
+  const seaEvents = useMemo<SeaEvent[]>(() => messages.flatMap(m => m.sea ? [{ id: m.id, sender: m.sender_id, at: m.created_at, msg: m.sea }] : []), [messages])
+  // Not memoized: secureError is per-render; SeaBattleSheet guards its one-shot reveal with a ref.
+  const sendSea = async (msg: SeaMsg) => {
+    try { mergeMessages([await sendSecure(match.id, myId, other.id, { g: msg, t: seaFallback(msg) })]); return true }
+    catch (e) { secureError(e, 'Sea Battle'); return false }
+  }
   const sendGame = async (kind: TodKind, level: TodLevel) => {
     setShowGame(false)
     const played = new Set(messages.flatMap(m => m.game ? [todKey(m.game)] : []))
@@ -559,6 +570,11 @@ function ChatScreen({ match, myId, other, onBack, myPrivacy = {} }: { match: Mat
         <div style={{ textAlign: 'center', fontSize: 11, color: C.dim, margin: '4px 0 10px' }}>🔒 Messages, photos and voice notes are end-to-end encrypted. Only you two can read them.</div>
         {messages.map(msg => {
           const mine = msg.sender_id === myId
+          if (msg.sea) return msg.sea.op === 'reveal' ? null : (
+            <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
+              <SeaChip text={msg.content ?? ''} mine={mine} isInvite={msg.sea.op === 'invite'} onOpen={() => setShowSea(true)} theme={SBT} />
+            </div>
+          )
           if (msg.game) return (
             <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
               <TodCard prompt={msg.game} fallback={msg.content ?? ''} mine={mine} onReply={() => setShowGame(true)} theme={TT} />
@@ -600,6 +616,13 @@ function ChatScreen({ match, myId, other, onBack, myPrivacy = {} }: { match: Mat
         })}
         <div ref={bottomRef} />
       </div>
+      {showSea && <SeaBattleSheet events={seaEvents} myId={myId} otherName={other.name} onSend={sendSea} onClose={() => setShowSea(false)} theme={SBT} />}
+      {gameMenu && (
+        <div role="menu" aria-label="Games" style={{ display: 'flex', gap: 8, padding: '10px 12px', background: C.surf2, borderTop: `1px solid ${C.border}` }}>
+          <button role="menuitem" onClick={() => { setGameMenu(false); setShowGame(true) }} style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: C.surf3, border: `1px solid ${C.border2}`, color: C.text, fontWeight: 700, fontSize: 14 }}>🎲 Truth or Dare</button>
+          <button role="menuitem" onClick={() => { setGameMenu(false); setShowSea(true) }} style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: C.surf3, border: `1px solid ${C.border2}`, color: C.text, fontWeight: 700, fontSize: 14 }}>⚓ Sea Battle</button>
+        </div>
+      )}
       {showGame && <TodPicker onSend={sendGame} onClose={() => setShowGame(false)} theme={TT} />}
       {showStickers && <StickerPicker title="Stickers" onPick={sendSticker} onClose={() => setShowStickers(false)} background={C.surf2} border={C.border2} />}
 
@@ -639,7 +662,7 @@ function ChatScreen({ match, myId, other, onBack, myPrivacy = {} }: { match: Mat
         {!recording && !audioUrl && (
           <>
           <button aria-label="Send a sticker" onClick={() => setShowStickers(true)} style={{ width: 40, height: 40, borderRadius: 10, background: C.surf2, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🍑</button>
-          <button aria-label="Play Truth or Dare" onClick={() => setShowGame(v => !v)} style={{ width: 40, height: 40, borderRadius: 10, background: showGame ? `${C.accent}22` : C.surf2, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🎲</button>
+          <button aria-label="Games" aria-expanded={gameMenu} onClick={() => { setShowGame(false); setGameMenu(v => !v) }} style={{ width: 40, height: 40, borderRadius: 10, background: gameMenu || showGame ? `${C.accent}22` : C.surf2, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🎮</button>
           <button aria-label="Attach file" onClick={() => fileRef.current?.click()} style={{ width: 40, height: 40, borderRadius: 10, background: C.surf2, color: C.muted, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>📎</button>
           </>
         )}
