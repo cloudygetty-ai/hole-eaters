@@ -12,7 +12,7 @@
 
 import { supabase } from './supabase'
 
-export interface SealedPayload { t?: string; s?: string; m?: { p: string; k: string; iv: string; mime: string; kind: 'image' | 'video' | 'audio' } }
+export interface SealedPayload { t?: string; s?: string; m?: { p: string; k: string; iv: string; mime: string; kind: 'image' | 'video' | 'audio' }; g?: unknown /* game card; validated by the reader */ }
 export interface Envelope { v: 1; sd: string; iv: string; ct: string; k: Record<string, string> }
 interface DeviceKey { deviceId: string; userId: string; publicKey: CryptoKey }
 interface LocalDevice { deviceId: string; userId: string; privateKey: CryptoKey; publicJwk: JsonWebKey }
