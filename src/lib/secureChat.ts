@@ -5,11 +5,12 @@ import { supabase, type Message } from './supabase'
 import { ensureDeviceKey, seal, open, encryptFile, decryptFile, NoKeysError, type SealedPayload } from './e2ee'
 import { stripMetadata } from './stripMetadata'
 import { asTodPrompt, type TodPrompt } from './truthOrDare'
+import { asSeaMsg, type SeaMsg } from './seaBattle'
 
 export { NoKeysError }
 
 /** A decrypted message. `media_url` is "e2ee:<message id>" for an encrypted file, or a sticker path. */
-export type ChatView = Message & { enc?: unknown; file?: SealedPayload['m']; locked?: boolean; game?: TodPrompt }
+export type ChatView = Message & { enc?: unknown; file?: SealedPayload['m']; locked?: boolean; game?: TodPrompt; sea?: SeaMsg }
 
 export async function sendSecure(matchId: string, myId: string, otherId: string, payload: SealedPayload): Promise<ChatView> {
   const me = await ensureDeviceKey(myId)
@@ -40,6 +41,7 @@ function toView(row: ChatView, payload: SealedPayload | null): ChatView {
     media_type: payload.m?.kind ?? (payload.s ? 'image' : null),
     file: payload.m,
     game: asTodPrompt(payload.g) ?? undefined,
+    sea: asSeaMsg(payload.g) ?? undefined,
   }
 }
 
