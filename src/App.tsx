@@ -850,6 +850,7 @@ function Onboarding({ onComplete, onSignIn }: { onComplete: (p: Partial<Profile>
   const steps = [
     { title: "What do they call you?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Your name or handle" style={inputStyle} /><input value={form.age} onChange={e => setForm(f => ({ ...f, age: e.target.value }))} placeholder="Age (18+)" type="number" style={inputStyle} /></div>), valid: () => form.name.trim().length > 0 && Number(form.age) >= 18 },
     { title: "Your role?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{ROLES.map(r => (<button key={r} onClick={() => setForm(f => ({ ...f, role: r }))} style={{ padding: '14px', borderRadius: 12, background: form.role === r ? `${C.accent}22` : C.surf3, border: `1px solid ${form.role === r ? C.accent : C.border2}`, color: form.role === r ? C.accent : C.text, fontWeight: form.role === r ? 700 : 400, fontSize: 15, textAlign: 'left' }}>{r}</button>))}</div>), valid: () => true },
+    { title: "Welcome to Hole Eaters 🍑 First, the important question", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['eating']} theme={DT} />), valid: () => true },
     { title: "Your stats", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['stats']} theme={DT} />), valid: () => true },
     { title: "What you're into", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['interests']} theme={DT} />), valid: () => true },
     { title: "Sexual health", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['health']} theme={DT} />), valid: () => true },
@@ -2697,7 +2698,7 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
           </div>
 
           {/* Stats, interests, sexual health */}
-          <ProfileDetailsFields value={form.details} onChange={details => setForm(f => ({ ...f, details }))} sections={['stats', 'interests', 'health']} theme={DT} />
+          <ProfileDetailsFields value={form.details} onChange={details => setForm(f => ({ ...f, details }))} sections={['eating', 'stats', 'interests', 'health']} theme={DT} />
 
           {/* Emoji + Color */}
           <div>

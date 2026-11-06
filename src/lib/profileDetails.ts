@@ -16,10 +16,17 @@ export interface ProfileDetails {
   practices?: string[]
   hiv_status?: string
   hiv_tested?: string // YYYY-MM
+  // Eating survey (onboarding welcome step)
+  eat_role?: string
+  eat_appetite?: string
+  eat_style?: string[]
+  eat_positions?: string[]
+  eat_prep?: string[]
   cover_url?: string // Twitter-style banner image; lives here to avoid a schema change
 }
 
-export type MultiKey = 'location' | 'public' | 'looking_for' | 'fetishes' | 'kinks' | 'into' | 'practices'
+export type MultiKey = 'location' | 'public' | 'looking_for' | 'fetishes' | 'kinks' | 'into' | 'practices' | 'eat_style' | 'eat_positions' | 'eat_prep'
+export type SingleKey = 'eat_role' | 'eat_appetite'
 
 export const BODY_TYPES = ['Slim', 'Average', 'Athletic', 'Muscular', 'Stocky', 'Large']
 
@@ -31,6 +38,18 @@ export const INTEREST_GROUPS: { key: MultiKey; label: string; options: string[] 
   { key: 'kinks', label: 'Kinks', options: ['Cum Play', 'Edging', 'Bondage', 'Dom', 'Sub', 'Group', 'Role Play', 'Watching'] },
   { key: 'into', label: 'Into', options: ['Fucking', 'Jerk Off', 'Oral', 'Oral (Swallow)', 'Rimming', 'Kissing', 'Making Out'] },
 ]
+
+// The welcome survey. Single-choice questions first, then multi-select. All optional.
+export const EATING_SINGLE: { key: SingleKey; label: string; question: string; options: string[] }[] = [
+  { key: 'eat_role', label: 'Eating', question: 'Eat or get eaten?', options: ['Eater', 'Get eaten', 'Both', 'Not my thing'] },
+  { key: 'eat_appetite', label: 'Appetite', question: 'How hungry are you?', options: ['Could go for hours', 'Main course', 'Appetizer', 'Occasional treat'] },
+]
+export const EATING_MULTI: { key: MultiKey; label: string; question: string; options: string[] }[] = [
+  { key: 'eat_style', label: 'Style', question: 'How do you like it?', options: ['Slow & sensual', 'Sloppy', 'Aggressive', 'Tongue deep', 'Fingers too', 'Toys too', 'Before fucking', 'All on its own'] },
+  { key: 'eat_positions', label: 'Positions', question: 'Favorite positions?', options: ['Face down, ass up', 'Face-sitting', 'On my back, legs up', 'Bent over', 'Standing', '69'] },
+  { key: 'eat_prep', label: 'Prep', question: 'Prep you expect (or offer)?', options: ['Fresh from the shower', 'Douched', 'Trimmed', 'Smooth', 'Natural / hairy', 'Ask me'] },
+]
+export const EATING_KEYS = [...EATING_SINGLE.map(q => q.key), ...EATING_MULTI.map(q => q.key)]
 
 export const PRACTICES = ['Safer sex only', 'Bareback if PrEP', 'Bareback', 'Ask me']
 export const HIV_STATUSES = ['Negative', 'Negative, On PrEP', 'Positive, Undetectable', 'Positive', 'Prefer not to say']

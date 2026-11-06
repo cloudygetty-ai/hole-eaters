@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import {
-  BODY_TYPES, ENDOWMENTS_IN, HEIGHTS_IN, HIV_STATUSES, INTEREST_GROUPS, PRACTICES,
+  BODY_TYPES, EATING_MULTI, EATING_SINGLE, ENDOWMENTS_IN, HEIGHTS_IN, HIV_STATUSES, INTEREST_GROUPS, PRACTICES,
   formatHeight, formatTested, statsLine, hasAnyDetails,
   type MultiKey, type ProfileDetails,
 } from '../lib/profileDetails'
@@ -20,7 +20,7 @@ function Chip({ on, children, onClick, t }: { on: boolean; children: string; onC
 
 const toggle = (list: string[] | undefined, v: string) => (list ?? []).includes(v) ? (list ?? []).filter(x => x !== v) : [...(list ?? []), v]
 
-type Section = 'stats' | 'interests' | 'health'
+type Section = 'stats' | 'interests' | 'health' | 'eating'
 
 export function ProfileDetailsFields({ value, onChange, sections, theme: t }: {
   value: ProfileDetails; onChange: (next: ProfileDetails) => void; sections: Section[]; theme: DetailsTheme
@@ -79,6 +79,24 @@ export function ProfileDetailsFields({ value, onChange, sections, theme: t }: {
         </div>
       ))}
 
+      {sections.includes('eating') && (<>
+        {EATING_SINGLE.map(q => (
+          <div key={q.key}>
+            <div style={label(t)}>{q.question}</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {q.options.map(o => <Chip key={o} t={t} on={value[q.key] === o} onClick={() => set({ [q.key]: value[q.key] === o ? undefined : o })}>{o}</Chip>)}
+            </div>
+          </div>
+        ))}
+        {value.eat_role !== 'Not my thing' && EATING_MULTI.map(q => (
+          <div key={q.key}>
+            <div style={label(t)}>{q.question}</div>
+            {multi(q.key, q.options)}
+          </div>
+        ))}
+        <div style={{ fontSize: 12, color: t.dim, lineHeight: 1.5 }}>All optional, shown on your profile. Rimming can pass on hep A, gonorrhea and gut bugs — the hep A vaccine and regular testing keep it carefree.</div>
+      </>)}
+
       {sections.includes('health') && (<>
         <div>
           <div style={label(t)}>Practices</div>
@@ -106,6 +124,8 @@ export function ProfileDetailsView({ details, theme: t }: { details: ProfileDeta
   if (!hasAnyDetails(details)) return null
   const d = details!
   const rows: { label: string; values: string[] }[] = [
+    ...EATING_SINGLE.map(q => ({ label: q.label, values: d[q.key] ? [d[q.key]!] : [] })),
+    ...EATING_MULTI.map(q => ({ label: q.label, values: d[q.key] ?? [] })),
     ...INTEREST_GROUPS.map(g => ({ label: g.label, values: d[g.key] ?? [] })),
     { label: 'Practices', values: d.practices ?? [] },
     { label: 'HIV Status', values: d.hiv_status ? [d.hiv_status] : [] },
