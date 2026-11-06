@@ -81,6 +81,7 @@ export class FakeBackend {
           here_now: this.t('spot_checkins').filter(c => c.spot_id === s.id).length,
           checked_in: this.t('spot_checkins').some(c => c.spot_id === s.id && c.user_id === user), mine: s.created_by === user })),
       request_venues: () => 0,
+      my_email_alerts_available: (_a, user) => !!this.t('profiles').find(x => x.id === user)?.has_email,
       add_spot: (a, user) => this.insert('spots', { kind: a.p_kind, name: a.p_name, description: a.p_description, lat: a.p_lat, lng: a.p_lng, source: 'community', status: 'pending', created_by: user }).id,
       check_in_spot: (a, user) => { this.insert('spot_checkins', { spot_id: a.p_spot, user_id: user }); return this.t('spot_checkins').filter(c => c.spot_id === a.p_spot).length },
       check_out_spot: (a, user) => { this.tables.spot_checkins = this.t('spot_checkins').filter(c => !(c.spot_id === a.p_spot && c.user_id === user)); return null },

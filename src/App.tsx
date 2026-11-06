@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import * as maplibregl from "maplibre-gl";
 import { SpotSheet, AddSpotSheet, SpotsReviewQueue, type SpotsTheme } from './components/Spots'
 import { spotMarkerEl } from './lib/spotMarker'
+import { MediaImg, MediaVideo } from './components/Media'
+import { LocationBlockedBanner, GoLiveButton, type LiveTheme } from './components/LiveAndLocation'
+import { holdWakeLock, watchLocationPermission, LIVE_MAX_MS, LIVE_SYNC_MS, NORMAL_SYNC_MS, type LocStatus } from './lib/goLive'
 import { getSpots, requestVenues, shouldRequestVenues, type Spot } from './lib/spots'
 // v6 loads its tile worker from a separate file; let Vite bundle it and point MapLibre at it
 import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
@@ -44,6 +47,7 @@ const C = {
 const DT: DetailsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim }
 const FONT = "'DM Mono', 'Fira Code', monospace"
 const PT: PrivacyTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green }
+const LT: LiveTheme = { surface: C.surface, surf2: C.surf2, surf3: C.surf3, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green }
 const ST: SpotsTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green, amber: C.amber }
 const RT: ReviewsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, green: C.green, amber: C.amber, orange: C.orange, red: '#ef4444' }
 const VT: VideoTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, dim: C.dim, muted: C.muted, accent: C.accent, font: FONT }
@@ -153,9 +157,9 @@ function Avatar({ user, size = 44, showStatus = true, ghost = false }: { user: P
           filter: ghost ? 'grayscale(0.8) brightness(0.5)' : 'none',
         }}>
           {ghost ? '👻' : user.video_url
-            ? <video src={user.video_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay muted loop playsInline />
+            ? <MediaVideo src={user.video_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay muted loop playsInline />
             : user.photo_url
-            ? <img src={user.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+            ? <MediaImg src={user.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
             : user.emoji}
         </div>
       </div>
@@ -758,8 +762,8 @@ function MediaUploadStep({ photoUrl, videoUrl, color, emoji, onPhoto, onVideo }:
           </div>
         ) : currentUrl ? (
           isPhoto
-            ? <img src={currentUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Profile photo" />
-            : <video src={currentUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay muted loop playsInline />
+            ? <MediaImg src={currentUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Profile photo" />
+            : <MediaVideo src={currentUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay muted loop playsInline />
         ) : (
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 36, marginBottom: 4 }}>{isPhoto ? emoji : '🎬'}</div>
@@ -1932,7 +1936,7 @@ function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boole
               <div style={{ width: 30, flexShrink: 0 }}>
                 {showHeader && (
                   <div style={{ width: 30, height: 30, borderRadius: '50%', background: `${sColor}18`, border: `1.5px solid ${sColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, overflow: 'hidden', boxShadow: `0 0 8px ${sColor}44` }}>
-                    {sender?.photo_url ? <img src={sender.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : sender?.emoji ?? '👤'}
+                    {sender?.photo_url ? <MediaImg src={sender.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : sender?.emoji ?? '👤'}
                   </div>
                 )}
               </div>
@@ -2988,6 +2992,12 @@ export default function App() {
     }
   }, [user])
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null)
+  // Location permission state (drives the "location is blocked" help) and Go Live mode
+  const [locStatus, setLocStatus] = useState<LocStatus>('pending')
+  const [locRetry, setLocRetry] = useState(0)
+  const [liveEndsAt, setLiveEndsAt] = useState<number | null>(null)
+  const liveRef = useRef(false)
+  liveRef.current = liveEndsAt !== null
   const [nearbyDistances, setNearbyDistances] = useState<Map<string, number>>(new Map())
   const [cruisingStatus, setCruisingStatus] = useState<string | null>(null)
 
@@ -3193,15 +3203,16 @@ export default function App() {
     let lastFix: { lat: number; lng: number } | null = null
     let lastSync = { lat: 0, lng: 0, t: 0 }
     const handlePosition = (pos: GeolocationPosition) => {
+      setLocStatus('ok')
       const { latitude: lat, longitude: lng } = pos.coords
       // Phone GPS wanders a few meters while standing still; ignore tiny moves
       if (lastFix && haversine(lastFix.lat, lastFix.lng, lat, lng) < 15) return
       lastFix = { lat, lng }
       setGpsCoords({ lat, lng })
 
-      // Sync + refetch at most every 20s unless the user moved 100m+
+      // Sync + refetch at most every 20s (8s while Live) unless the user moved 100m+
       const now = Date.now()
-      if (lastSync.t && now - lastSync.t < 20000 && haversine(lastSync.lat, lastSync.lng, lat, lng) < 100) return
+      if (lastSync.t && now - lastSync.t < (liveRef.current ? LIVE_SYNC_MS : NORMAL_SYNC_MS) && haversine(lastSync.lat, lastSync.lng, lat, lng) < 100) return
       lastSync = { lat, lng, t: now }
 
       // Sync to Supabase (best-effort, don't block UI)
@@ -3225,15 +3236,24 @@ export default function App() {
       })
     }
 
-    if (!navigator.geolocation) { setNearby([]); setNearbyLoading(false); return }
+    if (!navigator.geolocation) { setLocStatus('unavailable'); setNearby([]); setNearbyLoading(false); return }
 
-    // Initial position
-    navigator.geolocation.getCurrentPosition(handlePosition, () => { setNearby([]); setNearbyLoading(false) }, { enableHighAccuracy: true })
+    // Initial position. code 1 = the person (or the OS) blocked location → show how to fix it
+    navigator.geolocation.getCurrentPosition(handlePosition, (err) => {
+      setLocStatus(err.code === 1 ? 'denied' : (s => s === 'ok' ? s : 'unavailable'))
+      setNearby([]); setNearbyLoading(false)
+    }, { enableHighAccuracy: true, timeout: 20000 })
 
     // Watch for movement — re-fetch nearby every position update
-    const watchId = navigator.geolocation.watchPosition(handlePosition, () => {}, {
+    const watchId = navigator.geolocation.watchPosition(handlePosition, (err) => { if (err.code === 1) setLocStatus('denied') }, {
       enableHighAccuracy: true, maximumAge: 30000, timeout: 10000,
     })
+    // Chrome/Firefox tell us when it's switched back on in settings; Safari needs the Try again button
+    const stopPermWatch = watchLocationPermission(state => { if (state === 'granted') setLocRetry(n => n + 1) })
+    // While Live, ask for a fresh fix on a timer too (watchPosition only fires on movement)
+    const liveTick = setInterval(() => {
+      if (liveRef.current && document.visibilityState === 'visible') navigator.geolocation.getCurrentPosition(handlePosition, () => {}, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 })
+    }, LIVE_SYNC_MS)
 
     // Online = heartbeat while visible. Unmount cleanup alone never runs when a tab is closed or a
     // phone kills the app, which left profiles stuck "online"; the pg_cron sweep
@@ -3248,11 +3268,28 @@ export default function App() {
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       navigator.geolocation.clearWatch(watchId)
+      stopPermWatch()
+      clearInterval(liveTick)
       clearInterval(heartbeat)
       document.removeEventListener('visibilitychange', onVisibility)
       setOnline(user.id, false).catch(() => {})
     }
-  }, [user])
+  }, [user, locRetry])
+
+  // ── Go Live: screen stays on, auto-ends after 2 h ──
+  useEffect(() => {
+    if (liveEndsAt === null) return
+    let warned = false
+    const stop = holdWakeLock(why => { if (!warned) { warned = true; showError(`Live is on, but your phone may still lock the screen (${why}).`) } })
+    const end = setTimeout(() => { setLiveEndsAt(null); showError('Live ended after 2 hours') }, Math.max(0, liveEndsAt - Date.now()))
+    return () => { stop(); clearTimeout(end) }
+  }, [liveEndsAt])
+  const toggleLive = () => {
+    if (liveEndsAt !== null) { setLiveEndsAt(null); return }
+    if (locStatus === 'denied') { showError('Turn location on first — tap Fix it at the top'); return }
+    setLiveEndsAt(Date.now() + LIVE_MAX_MS)
+    setLocRetry(n => n + 1) // fresh fix right away
+  }
 
   // Returns an error message for the onboarding screen, or null once the profile is persisted.
   const handleOnboardingComplete = async (profileData: Partial<Profile>): Promise<string | null> => {
@@ -3390,11 +3427,17 @@ export default function App() {
 
       {/* Ghost banner */}
       {isGhost && <GhostBanner onDisable={() => setIsGhost(false)} />}
+      {(locStatus === 'denied' || locStatus === 'unavailable') && (screen === 'map' || screen === 'list') && (
+        <LocationBlockedBanner theme={LT} status={locStatus} onRetry={() => setLocRetry(n => n + 1)} />
+      )}
 
       {/* Main */}
       <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' || screen === 'videos' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, paddingBottom: screen === 'map' || screen === 'videos' ? 0 : `calc(${TAB_H}px + env(safe-area-inset-bottom))` }}>
         {screen === 'map' && (
-          <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} gpsCoords={gpsCoords} isPremium={IS_PREMIUM} />
+          <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} gpsCoords={gpsCoords} isPremium={IS_PREMIUM} />
+            <GoLiveButton theme={LT} live={liveEndsAt !== null} endsAt={liveEndsAt} onToggle={toggleLive} />
+          </div>
         )}
         {screen === 'list' && nearbyLoading && <NearbySkeleton />}
         {screen === 'list' && !nearbyLoading && (() => {

@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import type { Privacy } from '../lib/supabase'
+import { useEffect, useState, type ReactNode } from 'react'
+import { emailAlertsAvailable, type Privacy } from '../lib/supabase'
 import { lockEnabled, setPin, clearPin } from '../lib/appLock'
 
 // Privacy settings screen. Every switch here is enforced on the server except the startup lock
@@ -21,6 +21,8 @@ export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, onCh
 }) {
   const [pinSheet, setPinSheet] = useState(false)
   const [locked, setLocked] = useState(lockEnabled())
+  const [canEmail, setCanEmail] = useState<boolean | null>(null)
+  useEffect(() => { emailAlertsAvailable().then(setCanEmail) }, [])
   const flip = (k: Key) => onChange({ ...privacy, [k]: !privacy[k] })
 
   const Toggle = ({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) => (
@@ -66,7 +68,10 @@ export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, onCh
 
         <Section title="Notifications & alerts">
           <Row title="Preview" sub="Hide names and message info in lock-screen alerts" on={!notifyPreviews} onClick={() => onNotifyPreviews(!notifyPreviews)} />
-          <Row title="Overnight" sub="No alerts between 10pm and 8am" on={!!privacy.quiet_hours} onClick={() => flip('quiet_hours')} last />
+          <Row title="Overnight" sub="No alerts between 10pm and 8am" on={!!privacy.quiet_hours} onClick={() => flip('quiet_hours')} />
+          <Row title="Email alerts" last
+            sub={canEmail === false ? 'Needs an email login — tap 🔐 Save Account on your Me tab first' : 'Email me when I have unread messages and I’m away. Plain email: no names, no message text, at most every 6 hours'}
+            on={!!privacy.email_alerts && canEmail !== false} onClick={() => canEmail !== false && flip('email_alerts')} />
         </Section>
 
         <Section title="Limit details">

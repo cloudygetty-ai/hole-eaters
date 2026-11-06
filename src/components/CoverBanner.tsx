@@ -1,3 +1,4 @@
+import { MediaImg, MediaVideo } from './Media'
 import { useRef, type ReactNode } from 'react'
 
 // Twitter-style cover banner. Shows the cover photo, else the profile video, else a branded fallback.
@@ -21,9 +22,9 @@ export function CoverBanner({ url, videoUrl, height, accent, onPick, uploading =
       background: `radial-gradient(120% 140% at 85% 0%, ${accent}40, transparent 60%), linear-gradient(135deg, #1c1309, #0b0b10 70%)`,
     }}>
       {url ? (
-        <img src={url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+        <MediaImg src={url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
       ) : videoUrl ? (
-        <video src={videoUrl} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.75 }} autoPlay muted loop playsInline />
+        <MediaVideo src={videoUrl} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.75 }} autoPlay muted loop playsInline />
       ) : (
         <img src="/brand/emblem.webp" alt="" aria-hidden style={{ position: 'absolute', right: -24, top: -18, width: height * 1.25, opacity: 0.14, mixBlendMode: 'lighten' }} />
       )}

@@ -218,6 +218,13 @@ export function subscribeToPresence(cb: (profiles: Profile[]) => void) {
 export interface Privacy {
   hide_age?: boolean; hide_distance?: boolean; stealth?: boolean; quiet_hours?: boolean; video_off?: boolean; blur_media?: boolean
   hide_response_insight?: boolean; hide_from_community_insights?: boolean; hide_from_age_insights?: boolean
+  email_alerts?: boolean
+}
+
+/** Email alerts need a real, confirmed email login (not a guest account). */
+export async function emailAlertsAvailable(): Promise<boolean> {
+  const { data } = await supabase.rpc('my_email_alerts_available')
+  return data === true
 }
 
 /** Your own real age, settings and time zone (other people can't read these). */
