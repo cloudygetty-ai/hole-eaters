@@ -85,3 +85,38 @@ test('profiles show reply rate; video button hidden when they turned video off',
   await expect(page.getByText('end-to-end encrypted')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Start video call' })).toHaveCount(0)
 })
+
+test('delete account: typed confirm, server call, local data wiped, lands on home', async ({ browser }) => {
+  const backend = seed()
+  const { context, page, problems } = await openAs(browser, backend, ME)
+  const calls: unknown[] = []
+  await context.route(url => url.pathname === '/functions/v1/delete-account', async (route, req) => {
+    calls.push(req.postDataJSON()); await route.fulfill({ status: 200, json: { ok: true } })
+  })
+  await page.evaluate(() => localStorage.setItem('he_local_profile', '{"name":"MeTest"}')) // cached profile that must not survive
+  await page.getByText('Me', { exact: true }).last().click()
+  await page.getByRole('button', { name: /Privacy settings/ }).click()
+  await page.getByRole('button', { name: 'Delete my account' }).click()
+  const go = page.getByRole('button', { name: 'Delete forever' })
+  await expect(go).toBeDisabled()                                   // nothing happens until DELETE is typed
+  await page.getByLabel('Type DELETE to confirm').fill('delete')
+  await go.click()
+  await expect(page).toHaveURL(/\/\?home&deleted=1$/)
+  await expect(page.getByText('Your account and all its data have been deleted.')).toBeVisible()
+  expect(calls).toEqual([{ confirm: 'DELETE' }])
+  // (the test harness re-seeds its fake session on every load, so check app-owned keys instead)
+  expect(await page.evaluate(() => localStorage.getItem('he_local_profile'))).toBeNull()
+  expect(problems).toEqual([])
+})
+
+test('privacy, terms and contact pages are linked and readable', async ({ browser }) => {
+  const backend = seed()
+  const { page, problems } = await openAs(browser, backend, null, { path: '/?home' })
+  await page.getByRole('link', { name: 'Privacy', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Privacy Policy' })).toBeVisible()
+  await expect(page.getByText('ANL LLC').first()).toBeVisible()
+  await expect(page.getByRole('link', { name: 'cloudygetty@gmail.com' }).first()).toHaveAttribute('href', 'mailto:cloudygetty@gmail.com')
+  await page.getByRole('link', { name: 'Terms' }).last().click()
+  await expect(page.getByRole('heading', { name: 'Terms of Service' })).toBeVisible()
+  expect(problems).toEqual([])
+})

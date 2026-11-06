@@ -18,3 +18,9 @@ if (standalone) {
   const done = document.getElementById('install-done')
   if (done) done.hidden = false
 }
+
+// Shown after in-app account deletion (/?home&deleted=1)
+if (new URLSearchParams(location.search).has('deleted')) {
+  const note = document.getElementById('deleted-note')
+  if (note) { note.hidden = false; note.scrollIntoView({ block: 'center' }) }
+}
