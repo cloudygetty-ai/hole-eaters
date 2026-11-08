@@ -40,19 +40,25 @@ const ISO6709 = /[+-]\d{2}(?:\.\d+)?[+-]\d{3}(?:\.\d+)?(?:[+-]\d+(?:\.\d+)?)?\//
 const SCAN = 4 * 1024 * 1024 // metadata (moov) sits at the start or the end of the file
 
 async function scrubVideoLocation(file: File): Promise<File> {
-  const buf = new Uint8Array(await file.arrayBuffer())
-  const regions: [number, number][] = buf.length <= SCAN * 2 ? [[0, buf.length]] : [[0, SCAN], [buf.length - SCAN, buf.length]]
+  // Only the first and last SCAN bytes are read into memory; the middle stays a lazy Blob slice.
+  // (Reading a whole 4K clip with arrayBuffer() crashed iPhone Safari.)
+  const small = file.size <= SCAN * 2
+  const parts: [number, number][] = small ? [[0, file.size]] : [[0, SCAN], [file.size - SCAN, file.size]]
   let changed = false
-  for (const [start, end] of regions) {
+  const scrubbed = await Promise.all(parts.map(async ([start, end]) => {
+    const buf = new Uint8Array(await file.slice(start, end).arrayBuffer())
     // latin1 keeps a 1:1 byte ↔ char mapping, so match indexes are byte offsets
-    const text = new TextDecoder('latin1').decode(buf.subarray(start, end))
+    const text = new TextDecoder('latin1').decode(buf)
     for (const m of text.matchAll(ISO6709)) {
-      const at = start + (m.index ?? 0)
+      const at = m.index ?? 0
       for (let i = 0; i < m[0].length; i++) {
         const c = m[0][i]
         if (c >= '0' && c <= '9') { buf[at + i] = 0x30; changed = true } // digit → '0', length unchanged
       }
     }
-  }
-  return changed ? new File([buf], file.name, { type: file.type, lastModified: Date.now() }) : file
+    return buf
+  }))
+  if (!changed) return file
+  const body: BlobPart[] = small ? [scrubbed[0]] : [scrubbed[0], file.slice(SCAN, file.size - SCAN), scrubbed[1]]
+  return new File(body, file.name, { type: file.type, lastModified: Date.now() })
 }

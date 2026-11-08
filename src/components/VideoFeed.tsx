@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { uploadTooBig } from '../lib/uploadLimits'
 import {
   fetchFeed, uploadVideo, reportVideo, countView, getMyVerification, resolveHandles,
   FEED_PAGE_SIZE, UPLOAD_ERROR_COPY, VideoApiError, type FeedVideo, type VideoReportReason,
@@ -176,8 +177,13 @@ function UploadSheet({ t, onClose, onPosted }: { t: VideoTheme; onClose: () => v
 
         <label style={{ ...field, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
           <span style={{ fontSize: 20 }}>🎬</span>
-          <span style={{ color: file ? t.text : t.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file ? file.name : 'Choose video (MP4, MOV, WebM · 500 MB max)'}</span>
-          <input type="file" accept="video/mp4,video/quicktime,video/webm" hidden onChange={e => setFile(e.target.files?.[0] ?? null)} />
+          <span style={{ color: file ? t.text : t.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file ? file.name : 'Choose video (MP4, MOV, WebM · 50 MB max)'}</span>
+          <input type="file" accept="video/mp4,video/quicktime,video/webm" hidden onChange={e => {
+            const f = e.target.files?.[0] ?? null; e.target.value = ''
+            const tooBig = f && uploadTooBig(f)
+            if (tooBig) { setFile(null); setMsg({ ok: false, text: tooBig }); return }
+            setMsg(null); setFile(f)
+          }} />
         </label>
         <textarea placeholder="Caption" maxLength={500} rows={2} value={caption} onChange={e => setCaption(e.target.value)} style={{ ...field, resize: 'none' }} />
         <input placeholder="Tags, comma separated" value={tags} onChange={e => setTags(e.target.value)} style={field} />

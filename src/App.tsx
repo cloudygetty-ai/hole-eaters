@@ -34,6 +34,7 @@ import { isStickerUrl } from './lib/stickers'
 import { ProfileDetailsFields, ProfileDetailsView, type DetailsTheme } from './components/ProfileDetails'
 import { AnthemCard, AnthemField } from './components/Anthem'
 import { anthemForSave } from './lib/anthem'
+import { MAX_UPLOAD_MB, uploadErrorMessage, uploadTooBig } from './lib/uploadLimits'
 import type { ProfileDetails } from './lib/profileDetails'
 import { VideoFeed, type VideoTheme } from './components/VideoFeed'
 import { VideoModeration } from './components/VideoModeration'
@@ -504,8 +505,8 @@ function ChatScreen({ match, myId, other, onBack, myPrivacy = {} }: { match: Mat
         const m = await uploadSecureFile(match.id, myId, previewFile, previewFile.type.startsWith('video') ? 'video' : 'image')
         mergeMessages([await sendSecure(match.id, myId, other.id, { m, t: input.trim() || undefined })])
       } catch (e) {
-        if (e instanceof Error && e.message === 'metadata_strip_failed') say("Couldn't remove location data from that file, so it wasn't sent.")
-        else secureError(e, 'Photo')
+        if (e instanceof NoKeysError) secureError(e, 'Photo')
+        else { console.error('[chat] attachment failed', e); say(uploadErrorMessage(e, previewFile.type.startsWith('video') ? 'video' : 'photo')) }
       }
       setPreviewFile(null); setUploading(false)
     } else {
@@ -639,7 +640,13 @@ function ChatScreen({ match, myId, other, onBack, myPrivacy = {} }: { match: Mat
 
       {notice && <div role="status" style={{ margin: '0 12px 8px', padding: '10px 12px', borderRadius: 12, background: C.surf2, border: `1px solid ${C.border2}`, fontSize: 13, color: C.text }}>{notice}</div>}
       <div style={{ display: 'flex', gap: 8, padding: '10px 12px', background: C.surface, borderTop: `1px solid ${C.border}` }}>
-        <input type="file" accept="image/*,video/*" ref={fileRef} style={{ display: 'none' }} onChange={e => e.target.files?.[0] && setPreviewFile(e.target.files[0])} />
+        <input type="file" accept="image/*,video/*" ref={fileRef} style={{ display: 'none' }} onChange={e => {
+          const f = e.target.files?.[0]; e.target.value = ''
+          if (!f) return
+          const tooBig = uploadTooBig(f)
+          if (tooBig) { say(tooBig); return }
+          setPreviewFile(f)
+        }} />
         {!recording && !audioUrl && (
           <>
           <button aria-label="Send a sticker" onClick={() => setShowStickers(true)} style={{ width: 40, height: 40, borderRadius: 10, background: C.surf2, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>🍑</button>
@@ -737,12 +744,13 @@ function MediaUploadStep({ photoUrl, videoUrl, color, emoji, onPhoto, onVideo }:
 
   const isPhoto = tab === 'photo'
   const currentUrl = isPhoto ? photoUrl : videoUrl
-  const maxMB = isPhoto ? 60 : 150
+  const maxMB = MAX_UPLOAD_MB
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > maxMB * 1024 * 1024) { setErr(`Max ${maxMB}MB`); return }
+    const tooBig = uploadTooBig(file)
+    if (tooBig) { setErr(tooBig); e.target.value = ''; return }
     setUploading(true); setErr(''); setProgress(0)
 
     // Simulate progress (uploadMedia is single-shot, no real progress API)
@@ -754,7 +762,7 @@ function MediaUploadStep({ photoUrl, videoUrl, color, emoji, onPhoto, onVideo }:
     const { url, error } = await uploadMedia(file, path)
     clearInterval(ticker); setProgress(100)
 
-    if (error || !url) { setErr('Upload failed'); setUploading(false); setProgress(0); return }
+    if (error || !url) { console.error('[media] upload failed', error); setErr(uploadErrorMessage(error, isPhoto ? 'photo' : 'video')); setUploading(false); setProgress(0); e.target.value = ''; return }
     if (isPhoto) onPhoto(url); else onVideo(url)
     setUploading(false)
     setTimeout(() => setProgress(0), 800)
@@ -3373,7 +3381,7 @@ export default function App() {
     setCoverUploading(true)
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')
     const { url, error } = await uploadMedia(file, `${user.id}/cover/${Date.now()}.${ext}`)
-    if (error || !url) { console.error('[cover] upload failed', error); showError('Cover upload failed. Try again.'); setCoverUploading(false); return }
+    if (error || !url) { console.error('[cover] upload failed', error); showError(uploadErrorMessage(error, 'photo')); setCoverUploading(false); return }
     await handleProfileSave({ details: { ...(myProfile?.details ?? {}), cover_url: url } })
     setCoverUploading(false)
   }

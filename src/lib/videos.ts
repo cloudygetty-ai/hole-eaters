@@ -135,7 +135,7 @@ export const UPLOAD_ERROR_COPY: Record<string, string> = {
   performer_not_verified: 'Everyone tagged has to verify their age first.',
   performer_not_found: 'Couldn’t find one of the tagged names.',
   daily_limit: 'Daily limit is 5 uploads. Try again tomorrow.',
-  too_large: 'Max file size is 500 MB.',
+  too_large: 'Max file size is 50 MB. Trim the clip or record at 1080p.',
   unsupported_type: 'Use MP4, MOV, or WebM.',
   attestation_required: 'Confirm all three boxes to post.',
 }
