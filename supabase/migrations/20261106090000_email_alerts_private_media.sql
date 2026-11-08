@@ -1,3 +1,4 @@
+-- Applied to production in two steps: email alerts on 2026-11-06, private media bucket on 2026-11-08.
 -- 1) Email alerts for unread messages (opt-in: privacy.email_alerts)
 --    Every 10 minutes pg_cron pokes the `email-alerts` edge function, which asks email_alert_batch() who is due
 --    and sends one discreet email each through Resend. Nothing is sent until RESEND_API_KEY is set on the function.
