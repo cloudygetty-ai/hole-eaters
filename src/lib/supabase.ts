@@ -572,3 +572,14 @@ export async function savePushSubscription(userId: string, sub: PushSubscription
 export async function deletePushSubscription(endpoint: string) {
   return supabase.from('push_subscriptions').delete().eq('endpoint', endpoint)
 }
+
+// ─── Account deletion ─────────────────────────────────────────────────────────
+// Server-side (service role) so files in every bucket go too; the function only ever deletes the caller.
+export async function deleteMyAccount(): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data, error } = await supabase.functions.invoke('delete-account', { body: { confirm: 'DELETE' } })
+  if (error || !data?.ok) {
+    const code = (await (error as { context?: Response } | null)?.context?.json?.().catch(() => null))?.error ?? data?.error ?? 'delete_failed'
+    return { ok: false, error: String(code) }
+  }
+  return { ok: true }
+}

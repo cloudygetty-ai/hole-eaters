@@ -44,6 +44,8 @@ export default defineConfig({
       input: {
         landing: path.resolve(__dirname, 'index.html'),
         app: path.resolve(__dirname, 'app.html'),
+        privacy: path.resolve(__dirname, 'privacy.html'),
+        terms: path.resolve(__dirname, 'terms.html'),
       },
     },
   },

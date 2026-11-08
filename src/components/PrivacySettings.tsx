@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { emailAlertsAvailable, type Privacy } from '../lib/supabase'
 import { lockEnabled, setPin, clearPin } from '../lib/appLock'
+import { DeleteAccountSheet } from './DeleteAccount'
 
 // Privacy settings screen. Every switch here is enforced on the server except the startup lock
 // (device-only by design) and photo blur (a viewing preference).
@@ -9,7 +10,7 @@ export interface PrivacyTheme { bg: string; surface: string; surf2: string; surf
 
 type Key = keyof Privacy
 
-export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, onChange, onNotifyPreviews, onGhost, onClose }: {
+export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, onChange, onNotifyPreviews, onGhost, onClose, onDeleted }: {
   theme: PrivacyTheme
   privacy: Privacy
   notifyPreviews: boolean
@@ -18,8 +19,10 @@ export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, onCh
   onNotifyPreviews: (on: boolean) => void
   onGhost: (on: boolean) => void
   onClose: () => void
+  onDeleted: () => void
 }) {
   const [pinSheet, setPinSheet] = useState(false)
+  const [deleteSheet, setDeleteSheet] = useState(false)
   const [locked, setLocked] = useState(lockEnabled())
   const [canEmail, setCanEmail] = useState<boolean | null>(null)
   useEffect(() => { emailAlertsAvailable().then(setCanEmail) }, [])
@@ -93,8 +96,18 @@ export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, onCh
         <p style={{ fontSize: 12, color: t.dim, textAlign: 'center', lineHeight: 1.5 }}>
           🔒 Chats are end-to-end encrypted. Your exact location is never shown to anyone.
         </p>
+
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 18, fontSize: 13 }}>
+          <a href="/privacy" target="_blank" rel="noopener" style={{ color: t.muted }}>Privacy Policy</a>
+          <a href="/terms" target="_blank" rel="noopener" style={{ color: t.muted }}>Terms</a>
+          <a href="/privacy#contact" target="_blank" rel="noopener" style={{ color: t.muted }}>Contact</a>
+        </div>
+        <button onClick={() => setDeleteSheet(true)} style={{ padding: 14, borderRadius: 14, background: 'transparent', border: '1px solid #ef444466', color: '#ef4444', fontWeight: 700, fontSize: 14 }}>
+          Delete my account
+        </button>
       </div>
       {pinSheet && <PinSetup theme={t} onDone={() => { setPinSheet(false); setLocked(lockEnabled()) }} />}
+      {deleteSheet && <DeleteAccountSheet theme={t} onDeleted={onDeleted} onCancel={() => setDeleteSheet(false)} />}
     </div>
   )
 }
