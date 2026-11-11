@@ -37,6 +37,7 @@ import { anthemForSave } from './lib/anthem'
 import { MAX_UPLOAD_MB, uploadErrorMessage, uploadTooBig } from './lib/uploadLimits'
 import type { ProfileDetails } from './lib/profileDetails'
 import { VideoFeed, type VideoTheme } from './components/VideoFeed'
+import { AccountGate } from './components/AccountGate'
 import { VideoModeration } from './components/VideoModeration'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -161,7 +162,8 @@ function Avatar({ user, size = 44, showStatus = true, ghost = false }: { user: P
           filter: ghost ? 'grayscale(0.8) brightness(0.5)' : 'none',
         }}>
           {ghost ? '👻' : user.video_url
-            ? <MediaVideo src={user.video_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay muted loop playsInline />
+            ? <MediaVideo src={user.video_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} autoPlay muted loop playsInline
+                fallback={user.photo_url ? <MediaImg src={user.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : user.emoji} />
             : user.photo_url
             ? <MediaImg src={user.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
             : user.emoji}
@@ -2894,6 +2896,8 @@ export default function App() {
   const [showPushPrompt, setShowPushPrompt] = useState(false)
   const [showInstall, setShowInstall] = useState(false)
   const [showAuth, setShowAuth] = useState(false)
+  // Sessions without an account get a reduced view; the database enforces it (videos + global chat RLS).
+  const needsAccount = !user || !!user.is_anonymous
   const [showViewed, setShowViewed] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
   const [showVersion, setShowVersion] = useState(false)
@@ -3543,11 +3547,13 @@ export default function App() {
         {screen === 'matches' && user && (
           <MatchesScreen userId={user.id} onOpenProfile={(p) => setSelectedUser(p)} onOpenChat={(match, other) => setActiveMatch({ match, other })} onClearUnread={(id) => setUnreadCounts(prev => { const n = {...prev}; delete n[id]; return n })} />
         )}
-        {screen === 'videos' && (
-          <VideoFeed theme={VT} canPost={!!user} />
+        {screen === 'videos' && (needsAccount
+          ? <AccountGate theme={VT} title="Videos are for members" body="Create a free account to watch and post videos." onCreate={() => setShowAuth(true)} />
+          : <VideoFeed theme={VT} canPost={!!user} />
         )}
-        {screen === 'global' && (
-          <GlobalChat userId={user?.id ?? null} isGhost={isGhost} />
+        {screen === 'global' && (needsAccount
+          ? <AccountGate theme={VT} title="Whore-izon is for members" body="Create a free account to read and post in the open chat." onCreate={() => setShowAuth(true)} />
+          : <GlobalChat userId={user?.id ?? null} isGhost={isGhost} />
         )}
         {screen === 'profile' && (
           <div style={{ overflowY: 'auto' }}>

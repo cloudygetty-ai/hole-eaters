@@ -45,19 +45,22 @@ function sign(path: string): Promise<string | null> {
   })
 }
 
-/** Render-ready URL for a stored media URL; undefined while signing. Re-signs before expiry. */
-export function useMediaUrl(url: string | null | undefined): string | undefined {
+/** Render-ready URL for a stored media URL; undefined while signing, null when storage refused it
+ *  (e.g. videos for sessions without an account). Re-signs before expiry. */
+export function useMediaUrl(url: string | null | undefined): string | null | undefined {
   const path = mediaPath(url)
   const [signed, setSigned] = useState<{ path: string; url: string } | null>(() => {
     const hit = path ? cache.get(path) : undefined
     return hit && hit.exp > Date.now() ? { path: path!, url: hit.url } : null
   })
+  const [refused, setRefused] = useState<string | null>(null)
   useEffect(() => {
     if (!path) return
     let live = true
     let refresh: ReturnType<typeof setTimeout> | undefined
     const run = () => sign(path).then(u => {
-      if (!live || !u) return
+      if (!live) return
+      if (!u) { setRefused(path); return }
       setSigned({ path, url: u })
       refresh = setTimeout(run, Math.max(60_000, (cache.get(path)?.exp ?? Date.now()) - Date.now()))
     })
@@ -66,5 +69,6 @@ export function useMediaUrl(url: string | null | undefined): string | undefined 
   }, [path])
   if (!url) return undefined
   if (!path) return url
-  return signed?.path === path ? signed.url : undefined
+  if (signed?.path === path) return signed.url
+  return refused === path ? null : undefined
 }
