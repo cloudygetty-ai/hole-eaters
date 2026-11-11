@@ -38,6 +38,7 @@ import { MAX_UPLOAD_MB, uploadErrorMessage, uploadTooBig } from './lib/uploadLim
 import type { ProfileDetails } from './lib/profileDetails'
 import { VideoFeed, type VideoTheme } from './components/VideoFeed'
 import { AccountGate } from './components/AccountGate'
+import { usePulseRooms, PULSE_TTL, type PulseRoom } from './lib/pulseRooms'
 import { VideoModeration } from './components/VideoModeration'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -78,7 +79,6 @@ const ROLES = ['Top', 'Power Top', 'Bottom', 'Power Bottom', 'Versatile', 'Side'
 const EMOJIS = ['🔥', '🐷', '🐻', '😈', '💦', '👅', '⛓️', '🌈']
 const COLORS = [C.accent, C.purple, C.orange, '#ec4899', '#06b6d4', '#10b981']
 const CRUISING = ['Hosting now', 'In my car', 'Come find me', 'Down for whatever', 'Just looking']
-const PULSE_TTL = 60 * 60 * 1000 // 60 min
 // Every feature is free for everyone (Ghost Mode, Street View, ...). Flip this back to gate features later.
 const IS_PREMIUM = true
 
@@ -112,8 +112,6 @@ const GCSS = `
 \``
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface PulseMsg { id: string; senderId: string; senderName: string; senderEmoji: string; senderColor: string; content: string; ts: number }
-interface PulseRoom { id: string; name: string; creatorId: string; creatorName: string; memberIds: string[]; messages: PulseMsg[]; expiresAt: number; pulseColor: string }
 
 // Map entries are real profiles; `isSeed` is kept only as an optional flag on old code paths.
 type SeedWithAI = Profile & { isSeed?: boolean }
@@ -3057,37 +3055,10 @@ export default function App() {
     return startPresence(!isGhost)
   }, [user, isGhost])
 
-  // ── Pulse Rooms (localStorage-backed, ephemeral) ──
-  const [pulseRooms, setPulseRooms] = useState<PulseRoom[]>(() => {
-    try {
-      const saved = localStorage.getItem('he_pulse_rooms')
-      if (saved) {
-        const rooms: PulseRoom[] = JSON.parse(saved)
-        return rooms.filter(r => Date.now() < r.expiresAt)
-      }
-    } catch {}
-    return []
-  })
-  const [activePulseRoom, setActivePulseRoom] = useState<PulseRoom | null>(null)
-
-  const savePulseRooms = (rooms: PulseRoom[]) => {
-    const live = rooms.filter(r => Date.now() < r.expiresAt)
-    localStorage.setItem('he_pulse_rooms', JSON.stringify(live))
-    setPulseRooms(live)
-  }
-
-  // Purge expired rooms every 30s
-  useEffect(() => {
-    const id = setInterval(() => {
-      setPulseRooms(prev => {
-        const live = prev.filter(r => Date.now() < r.expiresAt)
-        if (live.length !== prev.length) localStorage.setItem('he_pulse_rooms', JSON.stringify(live))
-        return live
-      })
-      if (activePulseRoom && Date.now() > activePulseRoom.expiresAt) setActivePulseRoom(null)
-    }, 30000)
-    return () => clearInterval(id)
-  }, [activePulseRoom])
+  // ── Pulse Rooms (shared: stored in Supabase, visible to every signed-in session) ──
+  const pulse = usePulseRooms(user?.id ?? null, myProfile, showError)
+  const pulseRooms = pulse.rooms
+  const activePulseRoom = pulse.active
 
   const [showPulseCreate, setShowPulseCreate] = useState(false)
 
@@ -3096,52 +3067,11 @@ export default function App() {
     setShowPulseCreate(true)
   }
 
-  const handleConfirmCreateRoom = (name: string, color: string) => {
-    const newRoom: PulseRoom = {
-      id: `room_${Date.now()}`,
-      name,
-      creatorId: user?.id ?? 'anon',
-      creatorName: myProfile?.name ?? 'Anonymous',
-      memberIds: [user?.id ?? 'anon'],
-      messages: [],
-      expiresAt: Date.now() + PULSE_TTL,
-      pulseColor: color,
-    }
-    const updated = [...pulseRooms, newRoom]
-    savePulseRooms(updated)
-    setActivePulseRoom(newRoom)
-    setShowPulseCreate(false)
+  const handleConfirmCreateRoom = async (name: string, color: string) => {
+    if (await pulse.create(name, color)) setShowPulseCreate(false)
   }
-
-  const handleOpenPulseRoom = (id: string) => {
-    const room = pulseRooms.find(r => r.id === id)
-    if (room) {
-      // Add self as member
-      if (!room.memberIds.includes(user?.id ?? 'anon')) {
-        const updated = pulseRooms.map(r => r.id === id ? { ...r, memberIds: [...r.memberIds, user?.id ?? 'anon'] } : r)
-        savePulseRooms(updated)
-        setActivePulseRoom({ ...room, memberIds: [...room.memberIds, user?.id ?? 'anon'] })
-      } else {
-        setActivePulseRoom(room)
-      }
-    }
-  }
-
-  const handlePulseSend = (text: string) => {
-    if (!activePulseRoom || !myProfile) return
-    const msg: PulseMsg = {
-      id: `msg_${Date.now()}`,
-      senderId: user?.id ?? 'anon',
-      senderName: myProfile.name ?? 'Anonymous',
-      senderEmoji: myProfile.emoji ?? '🔥',
-      senderColor: myProfile.color ?? C.accent,
-      content: text,
-      ts: Date.now(),
-    }
-    const updated = pulseRooms.map(r => r.id === activePulseRoom.id ? { ...r, messages: [...r.messages, msg] } : r)
-    savePulseRooms(updated)
-    setActivePulseRoom(prev => prev ? { ...prev, messages: [...prev.messages, msg] } : prev)
-  }
+  const handleOpenPulseRoom = pulse.open
+  const handlePulseSend = (text: string) => { void pulse.send(text) }
 
   useEffect(() => {
     const min = setTimeout(() => setSplashMinDone(true), 1600)
@@ -3465,7 +3395,7 @@ export default function App() {
       )}
 
       {/* Main */}
-      <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' || screen === 'videos' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, paddingBottom: screen === 'map' || screen === 'videos' ? 0 : `calc(${TAB_H}px + env(safe-area-inset-bottom))` }}>
+      <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' || screen === 'videos' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, paddingBottom: screen === 'map' ? 0 : `calc(${TAB_H}px + env(safe-area-inset-bottom))` }}>
         {screen === 'map' && (
           <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} gpsCoords={gpsCoords} isPremium={IS_PREMIUM} />
@@ -3680,7 +3610,7 @@ export default function App() {
                 <div>
                   <div style={{ fontSize: 11, color: C.dim, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Active Pulse Rooms</div>
                   {pulseRooms.filter(r => Date.now() < r.expiresAt).map(room => (
-                    <div key={room.id} onClick={() => { setActivePulseRoom(room); setScreen('map') }} style={{ padding: '12px 16px', borderRadius: 12, background: `${room.pulseColor}11`, border: `1px solid ${room.pulseColor}33`, marginBottom: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div key={room.id} onClick={() => { handleOpenPulseRoom(room.id); setScreen('map') }} style={{ padding: '12px 16px', borderRadius: 12, background: `${room.pulseColor}11`, border: `1px solid ${room.pulseColor}33`, marginBottom: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontSize: 16 }}>📡</span>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 700, fontSize: 13, color: room.pulseColor }}>{room.name}</div>
@@ -3814,7 +3744,7 @@ export default function App() {
 
       {/* Pulse Room overlay */}
       {activePulseRoom && Date.now() < activePulseRoom.expiresAt && myProfile && (
-        <PulseRoomOverlay room={activePulseRoom} myProfile={{ ...myProfile, id: user?.id ?? 'anon' }} onClose={() => setActivePulseRoom(null)} onSend={handlePulseSend} />
+        <PulseRoomOverlay room={activePulseRoom} myProfile={{ ...myProfile, id: user?.id ?? 'anon' }} onClose={() => pulse.close()} onSend={handlePulseSend} />
       )}
 
       {/* Error toasts */}
