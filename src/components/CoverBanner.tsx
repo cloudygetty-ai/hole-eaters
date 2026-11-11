@@ -14,6 +14,7 @@ export function CoverBanner({ url, videoUrl, height, accent, onPick, uploading =
   children?: ReactNode
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const emblem = <img src="/brand/emblem.webp" alt="" aria-hidden style={{ position: 'absolute', right: -24, top: -18, width: height * 1.25, opacity: 0.14, mixBlendMode: 'lighten' }} />
 
   return (
     <div style={{
@@ -24,10 +25,8 @@ export function CoverBanner({ url, videoUrl, height, accent, onPick, uploading =
       {url ? (
         <MediaImg src={url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
       ) : videoUrl ? (
-        <MediaVideo src={videoUrl} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.75 }} autoPlay muted loop playsInline />
-      ) : (
-        <img src="/brand/emblem.webp" alt="" aria-hidden style={{ position: 'absolute', right: -24, top: -18, width: height * 1.25, opacity: 0.14, mixBlendMode: 'lighten' }} />
-      )}
+        <MediaVideo src={videoUrl} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.75 }} autoPlay muted loop playsInline fallback={emblem} />
+      ) : emblem}
       {/* Bottom fade so the overlapping avatar and text stay readable on bright covers */}
       <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, transparent 35%, transparent 60%, rgba(8,9,13,0.55) 100%)' }} />
 
