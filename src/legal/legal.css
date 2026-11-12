@@ -17,3 +17,19 @@
 .legal th { color: var(--brass-lift); font-weight: 600; }
 .legal-nav { display: flex; gap: 18px; justify-content: center; padding: 18px; font-size: 0.875rem; }
 .legal-nav a { color: var(--smoke); }
+
+/* Header for /privacy, /terms and /2257. Lives here since the landing gate no longer has a top bar. */
+.top {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  background: linear-gradient(#090608 40%, rgba(9, 6, 8, 0));
+}
+.top__mark { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.top__mark img { width: 36px; height: 36px; mix-blend-mode: lighten; border-radius: 50%; }
+.top__mark span { font: 700 0.75rem/1 'Instrument Sans', system-ui, sans-serif; letter-spacing: 0.22em; text-transform: uppercase; color: #e0c08a; }
+.top__cta {
+  font: 600 0.8125rem/1 'Instrument Sans', system-ui, sans-serif; text-decoration: none; color: #efe6da;
+  padding: 10px 14px; border: 1px solid rgba(177, 138, 85, 0.22); border-radius: 999px;
+}
+.top__cta:hover { border-color: #b18a55; }

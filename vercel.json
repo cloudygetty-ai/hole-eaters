@@ -20,6 +20,10 @@
     {
       "source": "/terms",
       "destination": "/terms.html"
+    },
+    {
+      "source": "/2257",
+      "destination": "/2257.html"
     }
   ],
   "headers": [
