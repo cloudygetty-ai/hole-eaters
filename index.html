@@ -53,29 +53,47 @@
   <body>
     <div class="grain" aria-hidden="true"></div>
 
-    <header class="top">
-      <a class="top__mark" href="/?home" aria-label="Hole Eaters home">
-        <img src="/brand/emblem.webp" alt="" width="36" height="36" />
-        <span>Hole Eaters</span>
-      </a>
-      <a class="top__cta" href="/app">Open the map</a>
-    </header>
-
     <main>
-      <section class="hero">
-        <img class="hero__logo" src="/brand/logo.webp" alt="Hole Eaters" width="260" height="320" fetchpriority="high" />
-        <p class="eyebrow reveal" style="--d: 1">After hours &middot; 18+</p>
-        <h1 class="reveal" style="--d: 2">Who&rsquo;s near.<br /><em>Who&rsquo;s down.</em></h1>
-        <p class="hero__lede reveal" style="--d: 3">
-          The live cruising map for guys. See who&rsquo;s around right now, slide into a Pulse Room, or go Ghost and just look.
-        </p>
-        <div class="hero__actions reveal" style="--d: 4">
-          <a class="btn btn--ember" href="/app">Open the map</a>
-          <a class="btn btn--brass" href="#install">Add to Home Screen</a>
+      <section class="gate" aria-labelledby="gate-title">
+        <div class="gate__bokeh" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="gate__inner">
+          <img class="gate__logo" src="/brand/logo.webp" alt="Hole Eaters" width="260" height="320" fetchpriority="high" />
+          <p class="eyebrow reveal" style="--d: 1">After hours &middot; 18+</p>
+          <h1 id="gate-title" class="gate__title reveal" style="--d: 1">Who&rsquo;s near.<br /><em>Who&rsquo;s down.</em></h1>
+
+          <div class="gate__frame reveal" style="--d: 2">
+          <form class="gate__form" style="--d: 2" id="gate-form" novalidate>
+            <label class="field"><span>Email</span><input type="email" name="email" placeholder="you@example.com" autocomplete="email" inputmode="email" required />
+            </label>
+            <label class="field"><span>Password</span><input type="password" name="password" placeholder="••••••••" autocomplete="current-password" minlength="6" required />
+            </label>
+            <button type="button" class="gate__forgot" id="gate-forgot">Forgot password?</button>
+
+            <button type="submit" class="btn btn--ember btn--block" id="gate-submit">Step inside</button>
+            <p class="gate__msg" id="gate-msg" role="status" aria-live="polite" hidden></p>
+
+            <p class="gate__switch"><span id="gate-switch-q">New here?</span> <button type="button" id="gate-switch">Join free</button></p>
+          </form>
+
+          <div class="gate__or reveal" style="--d: 3"><span>or slip in unseen</span></div>
+
+          <button type="button" class="btn btn--brass btn--block gate__anon reveal" style="--d: 3" id="gate-anon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a8 8 0 0 0-8 8v12l2.7-2 2.6 2 2.7-2 2.7 2 2.6-2 2.7 2V10a8 8 0 0 0-8-8Zm-3 7.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm6 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z"/></svg>
+            Ghost in &mdash; no email
+          </button>
+          </div>
+
+          <a class="gate__about reveal" style="--d: 4" href="#about">What&rsquo;s inside &darr;</a>
+
+          <p class="gate__legal reveal" style="--d: 5">
+            By entering, you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.<br />
+            You must be 18 or older to enter.
+          </p>
+          <p class="gate__links reveal" style="--d: 5"><a href="/privacy#contact">Report or request removal of content</a></p>
         </div>
-        <p class="hero__fine reveal" style="--d: 5">Free &middot; No download &middot; Works in your browser</p>
       </section>
 
+      <div id="about" class="about-anchor"></div>
       <section class="features" aria-label="What's inside">
         <article class="card">
           <span class="card__num">01</span>

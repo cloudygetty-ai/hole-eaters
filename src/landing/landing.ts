@@ -1,3 +1,5 @@
+import { initGate } from './gate'
+
 // Landing "Put it on your Home Screen" section: show the steps for the visitor's phone.
 // Hole Eaters ships as a web app only (no native iPhone/Android apps planned), so this replaces the old app waitlist.
 
@@ -24,3 +26,5 @@ if (new URLSearchParams(location.search).has('deleted')) {
   const note = document.getElementById('deleted-note')
   if (note) { note.hidden = false; note.scrollIntoView({ block: 'center' }) }
 }
+
+initGate()
