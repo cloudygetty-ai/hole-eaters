@@ -39,6 +39,8 @@ import type { ProfileDetails } from './lib/profileDetails'
 import { VideoFeed, type VideoTheme } from './components/VideoFeed'
 import { AccountGate } from './components/AccountGate'
 import { VideoModeration } from './components/VideoModeration'
+import { LegalHolds } from './components/LegalHolds'
+import { promptPlaceHold } from './lib/legalHolds'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -2410,7 +2412,7 @@ function OfflineBanner() {
 
 // ─── Admin Dashboard ──────────────────────────────────────────────────────────
 function AdminDashboard({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<'stats' | 'reports' | 'reviews' | 'spots' | 'videos' | 'users' | 'bans'>('stats')
+  const [tab, setTab] = useState<'stats' | 'reports' | 'reviews' | 'spots' | 'videos' | 'users' | 'bans' | 'holds'>('stats')
   const [spotQueue, setSpotQueue] = useState<number | null>(null)
   const [flaggedReviews, setFlaggedReviews] = useState<FlaggedReview[]>([])
   // Daily database security checks (pg_cron → security_check_runs)
@@ -2466,6 +2468,7 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
     { id: 'videos', label: '🎬 Videos' },
     { id: 'users', label: '👥 Users' },
     { id: 'bans', label: '🚫 Bans' },
+    { id: 'holds', label: '⚖️ Legal holds' },
   ] as const
 
   return (
@@ -2583,11 +2586,14 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
                   <div style={{ fontSize: 13, fontWeight: 700 }}>{u.name}</div>
                   <div style={{ fontSize: 11, color: C.dim }}>{[u.role, u.age, u.online ? '🟢 online' : '⚫ offline'].filter(Boolean).join(' · ')}</div>
                 </div>
+                <button onClick={() => promptPlaceHold(u.id, u.name ?? 'this member')} style={{ padding: '5px 10px', borderRadius: 8, background: C.surf3, color: C.muted, fontSize: 11, fontWeight: 700 }}>Hold</button>
                 <button onClick={() => handleBan(u.id, 'admin action')} style={{ padding: '5px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: 11, fontWeight: 700 }}>Ban</button>
               </div>
             ))}
           </div>
         )}
+
+        {!loading && tab === 'holds' && <LegalHolds theme={VT} />}
 
         {/* Bans */}
         {!loading && tab === 'bans' && (
