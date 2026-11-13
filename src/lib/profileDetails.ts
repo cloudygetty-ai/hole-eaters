@@ -59,7 +59,7 @@ export const EATING_SINGLE: { key: SingleKey; label: string; question: string; o
   { key: 'eat_appetite', label: 'Appetite', question: 'How hungry are you?', options: ['Could go for hours', 'Main course', 'Appetizer', 'Occasional treat'] },
 ]
 export const EATING_MULTI: { key: MultiKey; label: string; question: string; options: string[] }[] = [
-  { key: 'eat_style', label: 'Style', question: 'How do you like it?', options: ['Slow & sensual', 'Sloppy', 'Aggressive', 'Tongue deep', 'Fingers too', 'Toys too', 'Before fucking', 'All on its own'] },
+  { key: 'eat_style', label: 'Style', question: 'How do you like it?', options: ['Slow & sensual', 'Sloppy', 'Aggressive', 'Tongue deep', 'Spread wide open', 'Gaped', 'Fingers too', 'Toys too', 'Before fucking', 'All on its own'] },
   { key: 'eat_positions', label: 'Positions', question: 'Favorite positions?', options: ['Face down, ass up', 'Face-sitting', 'On my back, legs up', 'Bent over', 'Standing', '69'] },
   { key: 'eat_prep', label: 'Prep', question: 'Prep you expect (or offer)?', options: ['Fresh from the shower', 'Douched', 'Trimmed', 'Smooth', 'Natural / hairy', 'Ask me'] },
 ]
