@@ -14,6 +14,7 @@ export interface ProfileDetails {
   kinks?: string[]
   into?: string[]
   practices?: string[]
+  prevention?: string[] // Doxy-PEP + vaccinations
   hiv_status?: string
   hiv_tested?: string // YYYY-MM
   // Eating survey (onboarding welcome step)
@@ -25,19 +26,32 @@ export interface ProfileDetails {
   cover_url?: string // Twitter-style banner image; lives here to avoid a schema change
 }
 
-export type MultiKey = 'location' | 'public' | 'looking_for' | 'fetishes' | 'kinks' | 'into' | 'practices' | 'eat_style' | 'eat_positions' | 'eat_prep'
+export type MultiKey = 'location' | 'public' | 'looking_for' | 'fetishes' | 'kinks' | 'into' | 'practices' | 'prevention' | 'eat_style' | 'eat_positions' | 'eat_prep'
 export type SingleKey = 'eat_role' | 'eat_appetite'
 
 export const BODY_TYPES = ['Slim', 'Average', 'Athletic', 'Muscular', 'Stocky', 'Large']
 
 export const INTEREST_GROUPS: { key: MultiKey; label: string; options: string[] }[] = [
-  { key: 'location', label: 'Location', options: ['Can host', 'Can travel', 'Car', 'Public'] },
-  { key: 'public', label: 'Into Public', options: ['Arcades', 'Bathhouses', 'Cruising spots', 'Gyms', 'Parks', 'Parties/Events', 'Restrooms'] },
-  { key: 'looking_for', label: 'Looking For', options: ['Bros', 'Daddies', 'Guys Next Door', 'Jocks', 'Bears', 'Otters', 'Twinks', 'Muscle', 'Chubs', 'Trans'] },
-  { key: 'fetishes', label: 'Fetishes', options: ['Body Hair', 'Hard Cocks', 'Cum', 'Feet', 'Gear', 'Jockstraps', 'Leather', 'Piercings', 'Tattoos', 'Underwear'] },
-  { key: 'kinks', label: 'Kinks', options: ['Cum Play', 'Edging', 'Bondage', 'Dom', 'Sub', 'Group', 'Role Play', 'Watching'] },
-  { key: 'into', label: 'Into', options: ['Fucking', 'Jerk Off', 'Oral', 'Oral (Swallow)', 'Rimming', 'Kissing', 'Making Out'] },
+  { key: 'location', label: 'Location', options: ['Can host', 'Can travel', 'Car', 'Hotel', 'Public'] },
+  { key: 'public', label: 'Into Public', options: ['Arcades', 'Bathhouses', 'Saunas', 'Cruising spots', 'Glory holes', 'Gyms', 'Parks', 'Parties/Events', 'Restrooms'] },
+  { key: 'looking_for', label: 'Looking For', options: ['Bros', 'Daddies', 'Guys Next Door', 'Jocks', 'Bears', 'Otters', 'Twinks', 'Muscle', 'Chubs', 'Older', 'Younger', 'Trans'] },
+  // "Gear" was split into specific gear types; legacy values still render (see legacyValues)
+  { key: 'fetishes', label: 'Fetishes', options: ['Body Hair', 'Beards', 'Hard Cocks', 'Cum', 'Feet', 'Pits', 'Musk', 'Jockstraps', 'Underwear', 'Leather', 'Rubber', 'Harnesses', 'Sportswear', 'Sneakers', 'Socks', 'Uniforms', 'Piercings', 'Tattoos'] },
+  { key: 'kinks', label: 'Kinks', options: ['Cum Play', 'Breeding', 'Edging', 'Bondage', 'Blindfolds', 'Spanking', 'Toys', 'Fisting', 'Pup Play', 'Dom', 'Sub', 'Verbal', 'Group', 'Role Play', 'Watching', 'Exhibitionism'] },
+  { key: 'into', label: 'Into', options: ['Fucking', 'Jerk Off', 'Oral', 'Oral (Swallow)', 'Rimming', '69', 'Frotting', 'Kissing', 'Making Out', 'Cuddling', 'Massage'] },
 ]
+
+// Display-only renames. Stored values never change, so existing profiles keep their selections.
+const OPTION_LABELS: Record<string, string> = {
+  'Rimming': 'Eating Ass',
+  'Bareback if PrEP': 'Bareback with PrEP users',
+  'Positive, Undetectable': 'Undetectable (U=U)',
+}
+export const optionLabel = (v: string) => OPTION_LABELS[v] ?? v
+
+// Stored values no longer offered as chips (e.g. "Gear") stay visible so they can be unselected
+export const legacyValues = (options: string[], selected: string[] | undefined) =>
+  (selected ?? []).filter(v => !options.includes(v))
 
 // The welcome survey. Single-choice questions first, then multi-select. All optional.
 export const EATING_SINGLE: { key: SingleKey; label: string; question: string; options: string[] }[] = [
@@ -52,6 +66,7 @@ export const EATING_MULTI: { key: MultiKey; label: string; question: string; opt
 export const EATING_KEYS = [...EATING_SINGLE.map(q => q.key), ...EATING_MULTI.map(q => q.key)]
 
 export const PRACTICES = ['Safer sex only', 'Bareback if PrEP', 'Bareback', 'Ask me']
+export const PREVENTION = ['Doxy-PEP', 'Mpox vaccine', 'HPV vaccine', 'Hep A vaccine', 'Hep B vaccine', 'Meningitis vaccine']
 export const HIV_STATUSES = ['Negative', 'Negative, On PrEP', 'Positive, Undetectable', 'Positive', 'Prefer not to say']
 
 export const HEIGHTS_IN = Array.from({ length: 31 }, (_, i) => 58 + i) // 4'10" – 7'0"
@@ -69,6 +84,14 @@ export function statsLine(d: ProfileDetails | null | undefined): string {
   else if (d.cut) parts.push(d.cut.toLowerCase())
   if (d.body) parts.push(d.body.toLowerCase())
   return parts.join(', ')
+}
+
+// Last 24 months as YYYY-MM, newest first: a picker instead of iOS Safari's blank month input
+export function testedMonths(now = new Date()): string[] {
+  return Array.from({ length: 24 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
 }
 
 export function formatTested(ym: string | undefined): string {

@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import {
-  BODY_TYPES, EATING_MULTI, EATING_SINGLE, ENDOWMENTS_IN, HEIGHTS_IN, HIV_STATUSES, INTEREST_GROUPS, PRACTICES,
-  formatHeight, formatTested, statsLine, hasAnyDetails,
+  BODY_TYPES, EATING_MULTI, EATING_SINGLE, ENDOWMENTS_IN, HEIGHTS_IN, HIV_STATUSES, INTEREST_GROUPS, PRACTICES, PREVENTION,
+  formatHeight, formatTested, legacyValues, optionLabel, testedMonths, statsLine, hasAnyDetails,
   type MultiKey, type ProfileDetails,
 } from '../lib/profileDetails'
 
@@ -29,7 +29,7 @@ export function ProfileDetailsFields({ value, onChange, sections, theme: t }: {
   const select: CSSProperties = { background: t.surf3, border: `1px solid ${t.border2}`, borderRadius: 12, padding: '12px 12px', color: t.text, fontSize: 14, width: '100%', outline: 'none', appearance: 'none' }
   const multi = (key: MultiKey, options: string[]) => (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-      {options.map(o => <Chip key={o} t={t} on={!!value[key]?.includes(o)} onClick={() => set({ [key]: toggle(value[key], o) })}>{o}</Chip>)}
+      {[...options, ...legacyValues(options, value[key])].map(o => <Chip key={o} t={t} on={!!value[key]?.includes(o)} onClick={() => set({ [key]: toggle(value[key], o) })}>{optionLabel(o)}</Chip>)}
     </div>
   )
 
@@ -94,7 +94,7 @@ export function ProfileDetailsFields({ value, onChange, sections, theme: t }: {
             {multi(q.key, q.options)}
           </div>
         ))}
-        <div style={{ fontSize: 12, color: t.dim, lineHeight: 1.5 }}>All optional, shown on your profile. Rimming can pass on hep A, gonorrhea and gut bugs — the hep A vaccine and regular testing keep it carefree.</div>
+        <div style={{ fontSize: 12, color: t.dim, lineHeight: 1.5 }}>All optional, shown on your profile. Eating ass can pass on hep A, gonorrhea and gut bugs — the hep A vaccine and regular testing keep it carefree.</div>
       </>)}
 
       {sections.includes('health') && (<>
@@ -103,15 +103,21 @@ export function ProfileDetailsFields({ value, onChange, sections, theme: t }: {
           {multi('practices', PRACTICES)}
         </div>
         <div>
+          <div style={label(t)}>Prevention</div>
+          {multi('prevention', PREVENTION)}
+        </div>
+        <div>
           <div style={label(t)}>HIV Status</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {HIV_STATUSES.map(s => <Chip key={s} t={t} on={value.hiv_status === s} onClick={() => set({ hiv_status: value.hiv_status === s ? undefined : s })}>{s}</Chip>)}
+            {HIV_STATUSES.map(s => <Chip key={s} t={t} on={value.hiv_status === s} onClick={() => set({ hiv_status: value.hiv_status === s ? undefined : s })}>{optionLabel(s)}</Chip>)}
           </div>
         </div>
         <div>
           <div style={label(t)}>Last tested</div>
-          <input aria-label="Last tested month" type="month" value={value.hiv_tested ?? ''} max={new Date().toISOString().slice(0, 7)}
-            onChange={e => set({ hiv_tested: e.target.value || undefined })} style={{ ...select, colorScheme: 'dark' }} />
+          <select aria-label="Last tested" value={value.hiv_tested ?? ''} onChange={e => set({ hiv_tested: e.target.value || undefined })} style={select}>
+            <option value="">Select month</option>
+            {[...new Set([...testedMonths(), ...(value.hiv_tested ? [value.hiv_tested] : [])])].map((m, i) => <option key={m} value={m}>{i === 0 ? 'This month' : formatTested(m)}</option>)}
+          </select>
         </div>
         <div style={{ fontSize: 12, color: t.dim, lineHeight: 1.5 }}>Optional. Only shown on your profile if you fill it in.</div>
       </>)}
@@ -128,6 +134,7 @@ export function ProfileDetailsView({ details, theme: t }: { details: ProfileDeta
     ...EATING_MULTI.map(q => ({ label: q.label, values: d[q.key] ?? [] })),
     ...INTEREST_GROUPS.map(g => ({ label: g.label, values: d[g.key] ?? [] })),
     { label: 'Practices', values: d.practices ?? [] },
+    { label: 'Prevention', values: d.prevention ?? [] },
     { label: 'HIV Status', values: d.hiv_status ? [d.hiv_status] : [] },
     { label: 'HIV Tested', values: d.hiv_tested ? [formatTested(d.hiv_tested)] : [] },
   ].filter(r => r.values.length > 0)
@@ -140,7 +147,7 @@ export function ProfileDetailsView({ details, theme: t }: { details: ProfileDeta
         <div key={r.label} style={{ display: 'grid', gridTemplateColumns: '108px 1fr', gap: 10, padding: '12px 0', borderTop: `1px solid ${t.border}` }}>
           <div style={{ fontSize: 13, color: t.muted }}>{r.label}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px', fontSize: 13, color: t.text }}>
-            {r.values.map(v => <span key={v}>{v}</span>)}
+            {r.values.map(v => <span key={v}>{optionLabel(v)}</span>)}
           </div>
         </div>
       ))}

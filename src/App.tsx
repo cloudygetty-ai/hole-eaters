@@ -886,7 +886,7 @@ function Onboarding({ onComplete, onSignIn }: { onComplete: (p: Partial<Profile>
     { title: "Sexual health", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['health']} theme={DT} />), valid: () => true },
     { title: "Your vibe", content: (() => {
       const VIBES = [
-        { id: 'tonight', label: 'Tonight', sub: "I'm free right now", emoji: '🌙', color: C.purple },
+        { id: 'friends', label: 'Friends', sub: 'Chat & hang out',     emoji: '🤝', color: C.purple },
         { id: 'hookup',  label: 'Hookup',  sub: 'No strings attached', emoji: '🔥', color: C.accent },
         { id: 'connect', label: 'Connect', sub: 'Something real',       emoji: '⚡', color: C.blue   },
         { id: 'explore', label: 'Explore', sub: 'Just looking',          emoji: '👁️', color: C.ghost  },
@@ -913,9 +913,9 @@ function Onboarding({ onComplete, onSignIn }: { onComplete: (p: Partial<Profile>
   ]
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: 'max(24px, env(safe-area-inset-top)) 24px 24px' }}>
       <style>{GCSS}</style>
-      <div style={{ width: '100%', maxWidth: 400 }}>
+      <div style={{ width: '100%', maxWidth: 400, marginTop: 24 }}>
         {step === 0 && <img src="/brand/logo.webp" alt="The Hole Eaters" width={160} style={{ display: 'block', margin: '0 auto 24px', height: 'auto', mixBlendMode: 'lighten' }} />}
         <div style={{ display: 'flex', gap: 6, marginBottom: 32 }}>{steps.map((_, i) => (<div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= step ? C.accent : C.surf3, transition: 'background 0.3s' }} />))}</div>
         <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 24 }}>{steps[step].title}</div>
