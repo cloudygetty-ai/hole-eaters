@@ -88,6 +88,7 @@ export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, onCh
         </Section>
 
         <Section title="Limit insights">
+          <Row title="Profile Insights" sub="Don't use who you view, like and message to show what you're into or how well others match you" on={!!privacy.hide_behavior_insights} onClick={() => flip('hide_behavior_insights')} />
           <Row title="Response" sub="Hide your reply rate from other members" on={!!privacy.hide_response_insight} onClick={() => flip('hide_response_insight')} />
           <Row title="Community" sub="Leave your role and body type out of other people's insights" on={!!privacy.hide_from_community_insights} onClick={() => flip('hide_from_community_insights')} />
           <Row title="Age" sub="Leave your age out of other people's insights" on={!!privacy.hide_from_age_insights} onClick={() => flip('hide_from_age_insights')} last />

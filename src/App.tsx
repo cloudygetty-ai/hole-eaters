@@ -27,6 +27,8 @@ import { pickTod, todFallback, todKey, type TodKind, type TodLevel } from './lib
 import { ensureDeviceKey } from './lib/e2ee'
 import { PrivacySettings, LockScreen, type PrivacyTheme } from './components/PrivacySettings'
 import { Insights } from './components/Insights'
+import { ProfileInsightCard } from './components/ProfileInsight'
+import { PickedForYou, SecondChances } from './components/Discover'
 import { lockEnabled, checkPin, clearPin, watchBackground } from './lib/appLock'
 import { InstallPrompt } from './components/InstallPrompt'
 import { StickerPicker } from './components/StickerPicker'
@@ -55,6 +57,7 @@ const PT: PrivacyTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: 
 const LT: LiveTheme = { surface: C.surface, surf2: C.surf2, surf3: C.surf3, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green }
 const ST: SpotsTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green, amber: C.amber }
 const RT: ReviewsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, green: C.green, amber: C.amber, orange: C.orange, red: '#ef4444' }
+const DIS = { surf2: C.surf2, surf3: C.surf3, border: C.border, text: C.text, muted: C.muted, dim: C.dim, green: C.green }
 const VT: VideoTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, dim: C.dim, muted: C.muted, accent: C.accent, font: FONT }
 const APP_VERSION = '1.0.0'
 const CHANGELOG: { v: string; date: string; items: string[] }[] = [
@@ -294,6 +297,7 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
               )}
               <AnthemCard url={(user as Profile).anthem_url} theme={DT} />
               <ProfileDetailsView details={(user as Profile).details} theme={DT} />
+              {!user.isSeed && myId && <ProfileInsightCard targetId={user.id} theme={DT} />}
             </div>
           )}
           {tab === 'reviews' && (
@@ -3499,6 +3503,12 @@ export default function App() {
               )}
               {/* User list */}
               <div style={{ overflowY: 'auto', flex: 1 }}>
+                {user && !activeTagFilter && (
+                  <>
+                    <SecondChances coords={gpsCoords} nearby={visibleNearby} distances={nearbyDistances} onSelect={setSelectedUser} theme={DIS} />
+                    <PickedForYou coords={gpsCoords} nearby={visibleNearby} onSelect={setSelectedUser} theme={DIS} />
+                  </>
+                )}
                 {filtered.length === 0 && (
                   <div style={{ textAlign: 'center', padding: 40, color: C.dim }}>
                     <div style={{ fontSize: 28, marginBottom: 8 }}>🏷️</div>

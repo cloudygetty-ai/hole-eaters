@@ -219,6 +219,7 @@ export interface Privacy {
   hide_age?: boolean; hide_distance?: boolean; stealth?: boolean; quiet_hours?: boolean; video_off?: boolean; blur_media?: boolean
   hide_response_insight?: boolean; hide_from_community_insights?: boolean; hide_from_age_insights?: boolean
   email_alerts?: boolean
+  hide_behavior_insights?: boolean // keep your activity out of Profile Insights and match scores
 }
 
 /** Email alerts need a real, confirmed email login (not a guest account). */
