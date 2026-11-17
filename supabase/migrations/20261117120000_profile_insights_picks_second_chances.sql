@@ -90,7 +90,7 @@ language sql stable security definer set search_path = public as $$
   tags as (select t, count(*) as people, sum(j.w) as s from j, unnest(j.tags) t group by t)
   select jsonb_build_object(
     'people', (select count(*) from j),
-    'interest', (select jsonb_object_agg(cat, round(s / nullif((select sum(s) from roles), 0), 3)) from roles),
+    'interest', coalesce((select jsonb_object_agg(cat, round(s / nullif((select sum(s) from roles), 0), 3)) from roles), '{}'),
     'tags', coalesce((select jsonb_agg(t order by s desc) from (select t, s from tags where people >= 2 order by s desc limit 8) z), '[]'),
     'age_avg', (select round(avg(age), 1) from j where age is not null),
     'age_sd', (select round(stddev_pop(age), 1) from j where age is not null))
@@ -119,7 +119,7 @@ begin
   b := public.behavior_profile(target);
   people := coalesce((b ->> 'people')::int, 0);
   i := b -> 'interest';
-  if people < 5 or i is null then return jsonb_build_object('enough', false); end if;
+  if people < 5 or i is null or i = '{}'::jsonb then return jsonb_build_object('enough', false); end if;
 
   select role, age, details into mine from profiles where id = me;
   my_cat := public.role_cat(mine.role);
@@ -168,7 +168,7 @@ language sql stable security definer set search_path to 'public', 'extensions' a
   ),
   pref as (
     select me.*,
-           coalesce((me.b ->> 'people')::int, 0) >= 5 and me.b -> 'interest' is not null as has_b,
+           coalesce((me.b ->> 'people')::int, 0) >= 5 and me.b -> 'interest' <> '{}'::jsonb as has_b,
            (select coalesce(array_agg(distinct x), '{}') from (select unnest(me.tags) union all select jsonb_array_elements_text(me.b -> 'tags')) z(x)) as want_tags,
            (select max(v::numeric) from jsonb_each_text(me.b -> 'interest') e(k, v)) as max_i
     from me
