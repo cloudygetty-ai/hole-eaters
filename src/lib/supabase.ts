@@ -245,6 +245,10 @@ export async function saveTimezone(userId: string, tz: string) {
 export interface Insights {
   days: number; views: number; likes: number; messages: number; people: number
   by_role: Record<string, number>; by_body: Record<string, number>; by_age: Record<string, number>
+  // Added Nov 2026. Optional so the screen still works against the previous my_insights.
+  by_vibe?: Record<string, number>; by_host?: Record<string, number>; by_eat?: Record<string, number>
+  by_distance?: Record<string, number>; by_time?: Record<string, number>
+  top_interests?: { tag: string; n: number }[]
   responsiveness: number | null
 }
 export async function getInsights(days = 30): Promise<Insights | null> {

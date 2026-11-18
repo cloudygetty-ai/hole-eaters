@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getInsights, type Insights as Data } from '../lib/supabase'
+import { optionLabel } from '../lib/profileDetails'
 
 // "Who's into you": the kinds of people who viewed, liked and messaged you. Aggregates only;
 // people who opted out of insights are left out of the breakdowns. Nobody is named here.
@@ -8,6 +9,12 @@ export interface InsightsTheme { bg: string; surface: string; surf2: string; sur
 
 const PALETTE = ['#4d79ff', '#ff4d6d', '#f59e0b', '#22c55e', '#a855f7', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#64748b']
 const AGE_ORDER = ['18-25', '26-35', '36-45', '46-55', '56+']
+const TIME_ORDER = ['Morning', 'Afternoon', 'Evening', 'Late night']
+const TIME_HINT: Record<string, string> = { 'Morning': '6am–noon', 'Afternoon': 'noon–5pm', 'Evening': '5–10pm', 'Late night': '10pm–6am' }
+const DIST_ORDER = ['Under 1 mi', '1–5 mi', '5–15 mi', '15+ mi']
+const EAT_ORDER = ['Eater', 'Get eaten', 'Both']
+const EAT_LABEL: Record<string, string> = { 'Eater': 'Eaters', 'Get eaten': 'Like getting eaten', 'Both': 'Both ways' }
+const SMALL = 'Shows once at least 3 people who check you out have this on their profile.'
 
 function Gauge({ score, t }: { score: number | null; t: InsightsTheme }) {
   // Half-circle from 1 (selective) to 10 (replies to everyone)
@@ -31,10 +38,11 @@ function Gauge({ score, t }: { score: number | null; t: InsightsTheme }) {
   )
 }
 
-function Bars({ data, t, order }: { data: Record<string, number>; t: InsightsTheme; order?: string[] }) {
+function Bars({ data: raw, t, order, labels, empty }: { data: Record<string, number> | undefined; t: InsightsTheme; order?: string[]; labels?: Record<string, string>; empty?: string }) {
+  const data = raw ?? {}
   const entries = (order ? order.filter(k => k in data).map(k => [k, data[k]] as [string, number]) : Object.entries(data).sort((a, b) => b[1] - a[1]))
   const total = entries.reduce((s, [, n]) => s + n, 0)
-  if (!total) return <div style={{ fontSize: 13, color: t.dim, padding: '8px 0' }}>Not enough data yet.</div>
+  if (!total) return <div style={{ fontSize: 13, color: t.dim, padding: '8px 0' }}>{empty ?? 'Not enough data yet.'}</div>
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {entries.map(([label, n], i) => {
@@ -42,7 +50,7 @@ function Bars({ data, t, order }: { data: Record<string, number>; t: InsightsThe
         return (
           <div key={label}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: t.text, marginBottom: 4 }}>
-              <span>{label}</span><span style={{ color: t.muted }}>{pct}%</span>
+              <span>{labels?.[label] ?? optionLabel(label)}</span><span style={{ color: t.muted }}>{pct}%</span>
             </div>
             <div style={{ height: 10, borderRadius: 5, background: t.surf3, overflow: 'hidden' }}>
               <div style={{ width: `${pct}%`, height: '100%', borderRadius: 5, background: PALETTE[i % PALETTE.length] }} />
@@ -110,10 +118,47 @@ export function Insights({ theme: t, onClose }: { theme: InsightsTheme; onClose:
               <h2 style={h}>By age</h2>
               <Bars data={data.by_age} t={t} order={AGE_ORDER} />
             </section>
+            <section style={card}>
+              <h2 style={h}>Vibes into you</h2>
+              <Bars data={data.by_vibe} t={t} empty={SMALL} />
+            </section>
+            <section style={card}>
+              <h2 style={h}>What they're into</h2>
+              {data.top_interests?.length ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {data.top_interests.map((x, i) => (
+                    <span key={x.tag} style={{ fontSize: 13, color: t.text, background: t.surf3, border: `1px solid ${PALETTE[i % PALETTE.length]}55`, padding: '6px 12px', borderRadius: 14 }}>
+                      {optionLabel(x.tag)} <span style={{ color: t.muted }}>· {x.n}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : <div style={{ fontSize: 13, color: t.dim, padding: '8px 0' }}>{SMALL}</div>}
+              <p style={{ fontSize: 12, color: t.dim, margin: '10px 0 0' }}>Top kinks, fetishes and interests among people checking you out · number of people</p>
+            </section>
+            <section style={card}>
+              <h2 style={h}>When you get noticed</h2>
+              {(() => {
+                const top = Object.entries(data.by_time ?? {}).sort((a, b) => b[1] - a[1])[0]
+                return top && top[1] >= 3 ? <p style={{ fontSize: 14, color: t.text, margin: '0 0 12px' }}>Most views and likes come in the <strong>{top[0].toLowerCase()}</strong> ({TIME_HINT[top[0]]}). Be online then.</p> : null
+              })()}
+              <Bars data={data.by_time} t={t} order={TIME_ORDER} />
+            </section>
+            <section style={card}>
+              <h2 style={h}>How far away they are</h2>
+              <Bars data={data.by_distance} t={t} order={DIST_ORDER} empty="Shows once at least 3 people who share their distance check you out." />
+            </section>
+            <section style={card}>
+              <h2 style={h}>Eat or get eaten</h2>
+              <Bars data={data.by_eat} t={t} order={EAT_ORDER} labels={EAT_LABEL} empty={SMALL} />
+            </section>
+            <section style={card}>
+              <h2 style={h}>Host or travel</h2>
+              <Bars data={data.by_host} t={t} empty={SMALL} />
+            </section>
 
             <p style={{ fontSize: 12, color: t.dim, lineHeight: 1.5 }}>
               Based on the {data.people} {data.people === 1 ? 'person' : 'people'} who viewed, liked or messaged you in the last {data.days} days.
-              People who chose to stay out of insights aren't counted, and nobody is named. Your reply score compares the chats someone else started with how many you answered within a day.
+              People who chose to stay out of insights aren't counted, nobody is named, and breakdowns built from other people's profiles need at least 3 of them before they show. Your reply score compares the chats someone else started with how many you answered within a day.
             </p>
           </>
         )}

@@ -7,6 +7,7 @@ export interface ProfileDetails {
   endowment_in?: number
   cut?: 'Cut' | 'Uncut'
   body?: string
+  vibe?: string[] // who you are (Bear, Jock…); feeds 'Vibes into you' in Insights
   location?: string[]
   public?: string[]
   looking_for?: string[]
@@ -26,12 +27,13 @@ export interface ProfileDetails {
   cover_url?: string // Twitter-style banner image; lives here to avoid a schema change
 }
 
-export type MultiKey = 'location' | 'public' | 'looking_for' | 'fetishes' | 'kinks' | 'into' | 'practices' | 'prevention' | 'eat_style' | 'eat_positions' | 'eat_prep'
+export type MultiKey = 'vibe' | 'location' | 'public' | 'looking_for' | 'fetishes' | 'kinks' | 'into' | 'practices' | 'prevention' | 'eat_style' | 'eat_positions' | 'eat_prep'
 export type SingleKey = 'eat_role' | 'eat_appetite'
 
 export const BODY_TYPES = ['Slim', 'Average', 'Athletic', 'Muscular', 'Stocky', 'Large']
 
 export const INTEREST_GROUPS: { key: MultiKey; label: string; options: string[] }[] = [
+  { key: 'vibe', label: 'My Vibe', options: ['Bear', 'Bro', 'Chub', 'Daddy', 'Discreet', 'Femme', 'Geek', 'Guy Next Door', 'Jock', 'Leather', 'Masc', 'Muscle', 'Otter', 'Pup', 'Trans', 'Twink'] },
   { key: 'location', label: 'Location', options: ['Can host', 'Can travel', 'Car', 'Hotel', 'Public'] },
   { key: 'public', label: 'Into Public', options: ['Arcades', 'Bathhouses', 'Saunas', 'Cruising spots', 'Glory holes', 'Gyms', 'Parks', 'Parties/Events', 'Restrooms'] },
   { key: 'looking_for', label: 'Looking For', options: ['Bros', 'Daddies', 'Guys Next Door', 'Jocks', 'Bears', 'Otters', 'Twinks', 'Muscle', 'Chubs', 'Older', 'Younger', 'Trans'] },
