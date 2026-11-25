@@ -1,5 +1,6 @@
 // Invite attribution. Contract: public.claim_referral(p_code) / public.my_invite_stats() in Supabase.
 import { supabase } from './supabase'
+import { storedSrc } from './promo'
 
 const REF_KEY = 'he_ref'
 export const SITE_URL = 'https://www.hole-eaters.com'
@@ -43,4 +44,19 @@ export async function getInviteStats(): Promise<InviteStats | null> {
     return null
   }
   return (data as InviteStats | null) ?? null
+}
+
+// Fire-and-forget with claimStoredReferral: tags the new profile with the poster/ad it came from.
+// Server enforces: once, profile < 24h old.
+export async function claimSignupSource(): Promise<void> {
+  const src = storedSrc()
+  if (!src) return
+  const { error } = await supabase.rpc('claim_signup_source', { p_src: src })
+  if (error) console.warn('[promo] source claim failed', error.message)
+}
+
+export interface PromoStat { src: string; visitors: number; signups: number }
+export async function getPromoStats(days = 90): Promise<PromoStat[]> {
+  const { data, error } = await supabase.rpc('promo_stats', { days })
+  return error || !Array.isArray(data) ? [] : (data as PromoStat[])
 }

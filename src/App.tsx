@@ -14,7 +14,9 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
 import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, getMyPrivate, savePrivacy, saveTimezone, getResponsiveness, getChatPrefs, type Privacy, ensureUserId, signChatMedia, blockUser, getBlockedIds, postGlobalMessage, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
-import { claimStoredReferral } from './lib/referrals'
+import { claimStoredReferral, claimSignupSource } from './lib/referrals'
+import { logPromoVisit } from './lib/promo'
+import { PromoStats } from './components/PromoStats'
 import { presenceLabel } from './lib/presenceLabel'
 import { registerWebPush, startPresence, unregisterWebPush, useOnlineIds } from './lib/citadel'
 import { InviteBanner } from './components/InviteBanner'
@@ -2499,6 +2501,7 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
             {secRun.results.filter(r => !r.ok).map(r => <div key={r.what} style={{ fontSize: 12, color: '#ef4444', marginTop: 6 }}>✗ {r.what}</div>)}
           </div>
         )}
+        {!loading && tab === 'stats' && <PromoStats theme={{ surf2: C.surf2, border: C.border, text: C.text, dim: C.dim, accent: C.accent }} />}
         {!loading && tab === 'stats' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {stats && Object.entries(stats).map(([key, val]) => (
@@ -2805,6 +2808,7 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
 type Screen = 'map' | 'list' | 'videos' | 'matches' | 'global' | 'profile'
 
 export default function App() {
+  useEffect(() => { logPromoVisit() }, []) // ?src= links that skip the landing (signed-in visitors)
   const [user, setUser] = useState<User | null>(null)
   // Boot gate: splash stays up until auth + first profile lookup settle (min 1.6s, max 5s)
   const [authReady, setAuthReady] = useState(false)
@@ -3367,6 +3371,7 @@ export default function App() {
     localStorage.setItem('he_local_profile', JSON.stringify(data))
     localStorage.setItem('he_profile_user_id', currentUser.id)
     claimStoredReferral().catch(() => {})
+    claimSignupSource().catch(() => {})
     return null
   }
 
