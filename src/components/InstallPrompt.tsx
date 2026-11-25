@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { onInAppNotification } from '../lib/push'
 
 // Reminds people to add Hole Eaters to their Home Screen, the only way iPhone delivers notifications to a web app.
 // iPhone has no install API, so it gets step-by-step instructions; Android uses the browser's install prompt when offered.
@@ -8,6 +9,7 @@ type Platform = 'ios-safari' | 'ios-other' | 'in-app' | 'android' | 'desktop'
 export interface InstallTheme { accent: string; surface: string; surf3: string; border: string; text: string; muted: string; dim: string }
 
 const SNOOZE_KEY = 'he_install_snooze_until'
+const VISITS_KEY = 'he_visits'
 const DAY = 24 * 60 * 60 * 1000
 
 export function isStandalone(): boolean {
@@ -26,6 +28,15 @@ function detectPlatform(): Platform {
 function snoozed(): boolean {
   try { return Number(localStorage.getItem(SNOOZE_KEY) ?? 0) > Date.now() } catch { return false }
 }
+/** Counts sessions (not reloads). Returns the count including this one. */
+function countVisit(): number {
+  try {
+    if (sessionStorage.getItem(VISITS_KEY)) return Number(localStorage.getItem(VISITS_KEY) ?? 1)
+    const n = Number(localStorage.getItem(VISITS_KEY) ?? 0) + 1
+    localStorage.setItem(VISITS_KEY, String(n)); sessionStorage.setItem(VISITS_KEY, '1')
+    return n
+  } catch { return 1 }
+}
 function snooze(days: number) {
   try { localStorage.setItem(SNOOZE_KEY, String(Date.now() + days * DAY)) } catch { /* private mode */ }
 }
@@ -42,7 +53,8 @@ const AddIcon = ({ color }: { color: string }) => (
 )
 
 /**
- * Bottom-sheet reminder. Appears `delayMs` after mount unless installed or snoozed.
+ * Bottom-sheet reminder, asked at a good moment instead of on arrival: the first in-app like, tap or
+ * message, or `delayMs` into a second visit. Never when installed or snoozed.
  * `open` forces it open (e.g. from the Notifications row); `onClose` fires when it closes.
  */
 export function InstallPrompt({ theme: t, delayMs = 12000, open, onClose }: { theme: InstallTheme; delayMs?: number; open?: boolean; onClose?: () => void }) {
@@ -58,8 +70,11 @@ export function InstallPrompt({ theme: t, delayMs = 12000, open, onClose }: { th
 
   useEffect(() => {
     if (isStandalone() || platform === 'desktop' || snoozed()) return
-    const timer = setTimeout(() => setVisible(true), delayMs)
-    return () => clearTimeout(timer)
+    // Someone just tapped/liked/messaged: the moment the value of alerts is obvious. Let the toast land first.
+    let momentTimer: ReturnType<typeof setTimeout> | undefined
+    const stop = onInAppNotification(() => { if (!snoozed()) momentTimer ??= setTimeout(() => setVisible(true), 4500) })
+    const visitTimer = countVisit() >= 2 ? setTimeout(() => setVisible(true), delayMs) : undefined
+    return () => { stop(); clearTimeout(momentTimer); clearTimeout(visitTimer) }
   }, [platform, delayMs])
 
   useEffect(() => { if (open && !isStandalone()) setVisible(true) }, [open])
@@ -88,10 +103,10 @@ export function InstallPrompt({ theme: t, delayMs = 12000, open, onClose }: { th
         <button aria-label="Remind me later" onClick={() => close(3)} style={{ position: 'absolute', top: 14, right: 16, color: t.dim, fontSize: 18, padding: 4 }}>✕</button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
           {appIcon}
-          <div style={{ fontWeight: 800, fontSize: 18, color: t.text }}>Make it an app</div>
+          <div style={{ fontWeight: 800, fontSize: 18, color: t.text }}>Don’t miss the next one.</div>
         </div>
         <div style={{ fontSize: 13, color: t.muted, lineHeight: 1.5, marginBottom: 8 }}>
-          Add Hole Eaters to your Home Screen to get notifications for likes, taps and messages, and open it full screen like a real app.
+          Add Hole Eaters to your Home Screen to get pinged when someone taps or messages you. It opens full screen, like any app.
         </div>
 
         {platform === 'in-app' && (

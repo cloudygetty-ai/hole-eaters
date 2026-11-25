@@ -61,26 +61,35 @@
           <p class="eyebrow reveal" style="--d: 1">After hours &middot; 18+</p>
           <h1 id="gate-title" class="gate__title reveal" style="--d: 1">Who&rsquo;s near.<br /><em>Who&rsquo;s down.</em></h1>
 
+          <!-- In-app browsers (Instagram, Grindr, TikTok…) can't Add to Home Screen or get alerts. landing.ts unhides this. -->
+          <div class="gate__inapp" id="gate-inapp" role="note" hidden>
+            <p>You&rsquo;re in an app&rsquo;s browser. Open in <span id="gate-inapp-browser">Safari</span> to save Hole Eaters and get alerts.</p>
+            <button type="button" id="gate-inapp-copy">Copy link</button>
+          </div>
+
           <div class="gate__frame reveal" style="--d: 2">
-          <form class="gate__form" style="--d: 2" id="gate-form" novalidate>
-            <label class="field"><span>Email</span><input type="email" name="email" placeholder="you@example.com" autocomplete="email" inputmode="email" required />
+          <!-- Ad traffic is new traffic: the no-email path is the primary action, accounts come second. -->
+          <button type="button" class="btn btn--ember btn--block gate__anon" id="gate-anon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a8 8 0 0 0-8 8v12l2.7-2 2.6 2 2.7-2 2.7 2 2.6-2 2.7 2V10a8 8 0 0 0-8-8Zm-3 7.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm6 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z"/></svg>
+            Open the map &mdash; no email
+          </button>
+          <p class="gate__anon-sub">No account needed. Look around first.</p>
+          <p class="gate__msg" id="gate-anon-msg" role="status" aria-live="polite" hidden></p>
+
+          <div class="gate__or"><span>or use your account</span></div>
+
+          <form class="gate__form" id="gate-form" novalidate>
+            <label class="field"><span>Email</span><input type="email" name="email" placeholder="you@example.com" autocomplete="email" inputmode="email" aria-describedby="gate-msg" required />
             </label>
-            <label class="field"><span>Password</span><input type="password" name="password" placeholder="••••••••" autocomplete="current-password" minlength="6" required />
+            <label class="field"><span>Password</span><input type="password" name="password" placeholder="••••••••" autocomplete="current-password" minlength="6" aria-describedby="gate-msg" required />
             </label>
             <button type="button" class="gate__forgot" id="gate-forgot">Forgot password?</button>
 
-            <button type="submit" class="btn btn--ember btn--block" id="gate-submit">Step inside</button>
             <p class="gate__msg" id="gate-msg" role="status" aria-live="polite" hidden></p>
+            <button type="submit" class="btn btn--brass btn--block" id="gate-submit">Log in</button>
 
-            <p class="gate__switch"><span id="gate-switch-q">New here?</span> <button type="button" id="gate-switch">Join free</button></p>
+            <p class="gate__switch"><span id="gate-switch-q">Want a profile now?</span> <button type="button" id="gate-switch">Join free</button></p>
           </form>
-
-          <div class="gate__or reveal" style="--d: 3"><span>or slip in unseen</span></div>
-
-          <button type="button" class="btn btn--brass btn--block gate__anon reveal" style="--d: 3" id="gate-anon">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a8 8 0 0 0-8 8v12l2.7-2 2.6 2 2.7-2 2.7 2 2.6-2 2.7 2V10a8 8 0 0 0-8-8Zm-3 7.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm6 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z"/></svg>
-            Ghost in &mdash; no email
-          </button>
           </div>
 
           <a class="gate__about reveal" style="--d: 4" href="#about">What&rsquo;s inside &darr;</a>

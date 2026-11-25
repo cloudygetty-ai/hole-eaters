@@ -210,11 +210,27 @@ h1 em, h2 em { font-style: italic; font-weight: 500; color: var(--ember-lift); }
 .gate__form { display: grid; gap: 12px; }
 .gate__form .field input { min-height: 48px; }
 .gate__form .field input { font-size: 1rem; } /* ≥16px stops iOS zoom-on-focus */
+.field input[aria-invalid] { border-color: var(--ember-lift); box-shadow: 0 0 0 1px var(--ember-lift); }
+/* Text buttons keep a 44px hit area (Apple HIG) without looking bigger */
 .gate__forgot, .gate__switch button {
-  background: none; border: 0; padding: 0; cursor: pointer; font: inherit;
+  display: inline-flex; align-items: center; min-height: 44px; min-width: 44px;
+  background: none; border: 0; padding: 0 2px; cursor: pointer; font: inherit;
   color: var(--brass-lift); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 4px;
 }
-.gate__forgot { justify-self: end; margin: -2px 0 2px; font-size: 0.8125rem; }
+.gate__forgot { justify-self: end; margin: -10px 0 -8px; font-size: 0.8125rem; }
+.gate__anon-sub { margin: 10px 0 0; text-align: center; color: var(--smoke); font-size: 0.875rem; }
+.gate__frame > .gate__msg { margin-top: 8px; }
+
+.gate__inapp {
+  display: flex; align-items: center; gap: 12px; width: 100%; margin: 0 0 14px; padding: 10px 12px;
+  background: rgba(177, 138, 85, 0.1); border: 1px solid var(--brass); text-align: left;
+}
+.gate__inapp p { margin: 0; flex: 1; font-size: 0.8125rem; line-height: 1.4; color: var(--ivory); }
+.gate__inapp button {
+  flex-shrink: 0; min-height: 44px; padding: 0 14px; border: 1px solid var(--brass); border-radius: 2px;
+  background: transparent; color: var(--brass-lift); cursor: pointer;
+  font: 700 0.6875rem/1 var(--ui); letter-spacing: 0.14em; text-transform: uppercase;
+}
 .gate__forgot:hover, .gate__switch button:hover { text-decoration-color: var(--brass-lift); }
 .gate__msg { margin: 0; font-size: 0.875rem; text-align: center; color: var(--ember-lift); }
 .gate__msg.ok { color: var(--brass-lift); }
@@ -222,7 +238,7 @@ h1 em, h2 em { font-style: italic; font-weight: 500; color: var(--ember-lift); }
 .gate__switch button { font-weight: 700; }
 
 .gate__or {
-  display: flex; align-items: center; gap: 14px; margin: 18px 0 14px;
+  display: flex; align-items: center; gap: 14px; margin: 20px 0 12px;
   font: 600 0.625rem/1 var(--ui); letter-spacing: 0.28em; text-transform: uppercase; color: var(--brass);
 }
 .gate__or::before, .gate__or::after { content: ''; flex: 1; height: 1px; background: var(--hairline); }
@@ -230,7 +246,8 @@ h1 em, h2 em { font-style: italic; font-weight: 500; color: var(--ember-lift); }
 .gate__anon svg { width: 18px; height: 18px; fill: currentColor; }
 
 .gate__about {
-  margin: 22px 0 0; text-decoration: none; color: var(--ivory);
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px;
+  margin: 10px 0 0; text-decoration: none; color: var(--ivory);
   font: 600 0.6875rem/1 var(--ui); letter-spacing: 0.28em; text-transform: uppercase;
 }
 .gate__legal { margin: 16px 0 0; max-width: 34ch; color: var(--smoke); font-size: 0.8125rem; line-height: 1.6; }

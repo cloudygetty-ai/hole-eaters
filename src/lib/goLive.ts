@@ -40,7 +40,26 @@ export function holdWakeLock(onLost: (why: string) => void): () => void {
 }
 
 // ── Location permission ──────────────────────────────────────────────────────
-export type LocStatus = 'pending' | 'ok' | 'denied' | 'unavailable'
+// 'off' = the person tapped "Not now" on the onboarding location screen; we don't trigger the OS
+// prompt until they turn it on themselves (a cold "Don't Allow" is hard to undo on iPhone).
+export type LocStatus = 'pending' | 'ok' | 'denied' | 'unavailable' | 'off'
+
+const LOC_LATER_KEY = 'he_loc_later'
+export function deferLocation(): void { try { localStorage.setItem(LOC_LATER_KEY, '1') } catch { /* private mode */ } }
+export function clearLocationDeferred(): void { try { localStorage.removeItem(LOC_LATER_KEY) } catch { /* private mode */ } }
+export function locationDeferred(): boolean { try { return localStorage.getItem(LOC_LATER_KEY) === '1' } catch { return false } }
+
+/** One-shot location request from a tap, so the OS prompt appears in context. Resolves either way. */
+export function requestLocationOnce(timeoutMs = 15_000): Promise<'granted' | 'denied' | 'unavailable'> {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve('unavailable')
+    navigator.geolocation.getCurrentPosition(
+      () => resolve('granted'),
+      err => resolve(err.code === 1 ? 'denied' : 'unavailable'),
+      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60_000 },
+    )
+  })
+}
 
 /** Which set of "turn location back on" steps to show. */
 export function locationPlatform(): 'ios-app' | 'ios-safari' | 'android' | 'desktop' {

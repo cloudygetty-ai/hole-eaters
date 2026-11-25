@@ -9,9 +9,10 @@ export function AccountGate({ theme: t, title, body, onCreate }: { theme: VideoT
       <div style={{ fontWeight: 800, fontSize: 18 }}>{title}</div>
       <div style={{ fontSize: 13, color: t.muted, maxWidth: 280, lineHeight: 1.5 }}>{body}</div>
       <button type="button" onClick={onCreate}
-        style={{ marginTop: 8, padding: '11px 22px', borderRadius: 22, border: 'none', background: t.accent, color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
-        Create account
+        style={{ marginTop: 8, minHeight: 44, padding: '11px 22px', borderRadius: 22, border: 'none', background: t.accent, color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
+        Keep my spot
       </button>
+      <div style={{ fontSize: 12, color: t.dim, marginTop: 2 }}>The map, profiles and messages stay open.</div>
     </div>
   )
 }
