@@ -195,6 +195,7 @@ h1 em, h2 em { font-style: italic; font-weight: 500; color: var(--ember-lift); }
   -webkit-mask-image: radial-gradient(closest-side, #000 72%, transparent); mask-image: radial-gradient(closest-side, #000 72%, transparent);
 }
 .gate__title { margin: 0 0 20px; font-size: clamp(2.125rem, 10vw, 3rem); font-weight: 900; line-height: 0.94; letter-spacing: -0.02em; }
+.gate__for { margin: -8px 0 20px; max-width: 30ch; color: var(--smoke); font-size: 0.9375rem; line-height: 1.4; }
 
 .gate__frame {
   position: relative; width: 100%; padding: 22px 18px 20px; text-align: left;

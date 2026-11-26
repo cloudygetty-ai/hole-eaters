@@ -28,7 +28,7 @@ Post / sticker / invite ──► hole-eaters.com (OG card, ?ref + utm captured)
 
 ## Channel playbook
 
-- **City subreddits and gay subs** — check each sub's self-promo rules first; many ban it. Post as a builder asking for feedback, not an ad. One sub per day, reply to every comment within the hour.
+- **City subreddits and LGBTQ subs** — check each sub's self-promo rules first; many ban it. Post as a builder asking for feedback, not an ad. One sub per day, reply to every comment within the hour.
 - **X / Bluesky** — the sticker aesthetic is the ad. Post one sticker or screen a day, pin the OG card post, link in bio.
 - **Venue drops** — bars, saunas, parties, Pride booths. Ask the venue first; offer them a free "house" Pulse Room for the night. One QR slug per venue so you can see which ones convert.
 - **Launch zone** — concentrate every drop in one area until the map feels busy, then move. Use `waitlist_demand()` to pick the next city.
@@ -39,7 +39,7 @@ Post / sticker / invite ──► hole-eaters.com (OG card, ?ref + utm captured)
 > Built a live cruising map because the big apps feel dead. See who's actually around right now, pop-up rooms for whoever's in range, ghost mode if you just want to look. Free, no download, 18+. Roast it: hole-eaters.com
 
 **X / Bluesky**
-> Who's near. Who's down. 🗺️ The live cruising map for guys — no download, open it tonight. 18+ → hole-eaters.com
+> Who's near. Who's down. 🗺️ The live cruising map for guys, girls, trans and nonbinary folks — no download, open it tonight. 18+ → hole-eaters.com
 
 **Venue staff DM**
 > Hey — I run Hole Eaters, a local cruising map. Could I leave a few stickers by the bar this weekend? I'll set up a room on the map named after your spot so your crowd can find each other.
