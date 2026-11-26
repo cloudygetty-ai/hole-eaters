@@ -31,7 +31,7 @@ export function InviteBanner({ name, theme }: { name?: string; theme: InviteThem
   const url = stats ? inviteUrl(stats.code) : 'https://www.hole-eaters.com/?src=invite'
 
   const share = async () => {
-    const text = `${name ?? 'Someone'} wants you on Hole Eaters, the live cruising map. It's free and everyone's welcome.`
+    const text = `${name ?? 'Someone'} wants you on Hole Eaters — the live cruising map for guys, girls, trans and nonbinary folks.`
     if (navigator.share) {
       await navigator.share({ title: 'Hole Eaters', text, url }).catch(() => {})
       return
