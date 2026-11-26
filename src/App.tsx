@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
 import * as maplibregl from "maplibre-gl";
 import { SpotSheet, AddSpotSheet, SpotsReviewQueue, type SpotsTheme } from './components/Spots'
 import { spotMarkerEl } from './lib/spotMarker'
@@ -42,6 +42,9 @@ import type { ProfileDetails } from './lib/profileDetails'
 import { VideoFeed, type VideoTheme } from './components/VideoFeed'
 import { AccountGate } from './components/AccountGate'
 import { usePulseRooms, PULSE_TTL, type PulseRoom } from './lib/pulseRooms'
+import { useNights, nightWhen, type Night } from './lib/nights'
+import { EmptyMapCard } from './components/EmptyMapCard'
+import { NightSheet, SpotNights, type NightCallbacks } from './components/Nights'
 import { VideoModeration } from './components/VideoModeration'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -1225,7 +1228,7 @@ function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoo
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
-  const pct = Math.max(0, (timeLeft / PULSE_TTL) * 100)
+  const pct = Math.min(100, Math.max(0, (timeLeft / PULSE_TTL) * 100)) // night rooms run longer than an hour
 
   const send = () => {
     if (!input.trim()) return
@@ -1374,18 +1377,25 @@ function setBuildings3d(map: maplibregl.Map, on: boolean) {
   if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', on ? 'none' : 'visible')
 }
 
-function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost, onOpenPulseRoom, pulseRooms, onCreatePulseRoom, gpsCoords, isPremium }: {
+function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost, onOpenPulseRoom, pulseRooms, onCreatePulseRoom, gpsCoords, isPremium, nights = [], onOpenNight, emptyOverlay, spotExtra }: {
   myProfile: Partial<Profile>; nearby: (Profile & { isSeed?: boolean })[]; myPos: { x: number; y: number };
   onMovePin: (p: { x: number; y: number }) => void; onSelectUser: (u: Profile & { isSeed?: boolean }) => void;
   isGhost: boolean; onOpenPulseRoom: (id: string) => void;
   pulseRooms: PulseRoom[]; onCreatePulseRoom: () => void;
   gpsCoords: { lat: number; lng: number } | null; isPremium: boolean;
+  /** Nights at spots nearby: drawn as beacons at the spot; a live night's room shows there, not in the ring. */
+  nights?: Night[]; onOpenNight?: (n: Night) => void;
+  /** The empty-map card; hidden while picking a spot. */
+  emptyOverlay?: ReactNode;
+  /** Extra content inside a spot's sheet (its nights). `close` closes the sheet. */
+  spotExtra?: (spot: Spot, close: () => void) => ReactNode;
 }) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const myMarkerRef = useRef<maplibregl.Marker | null>(null)
   const nearbyMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const pulseMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
+  const nightMarkersRef = useRef<maplibregl.Marker[]>([])
   const spotMarkersRef = useRef<maplibregl.Marker[]>([])
   const [mapReady, setMapReady] = useState(false)
   // Cruising spots layer
@@ -1620,8 +1630,10 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
     if (!mapRef.current || !mapReady) return
     pulseMarkersRef.current.forEach(m => m.remove())
     pulseMarkersRef.current.clear()
-    pulseRooms.filter(r => Date.now() < r.expiresAt).forEach((room, i) => {
-      const angle = (i / Math.max(pulseRooms.length, 1)) * Math.PI * 2
+    const nightRooms = new Set(nights.map(n => n.room_id).filter(Boolean))
+    const ringRooms = pulseRooms.filter(r => Date.now() < r.expiresAt && !nightRooms.has(r.id))
+    ringRooms.forEach((room, i) => {
+      const angle = (i / Math.max(ringRooms.length, 1)) * Math.PI * 2
       const lat = anchorLat + Math.sin(angle) * 0.0012
       const lng = anchorLng + Math.cos(angle) * 0.0015
       const el = document.createElement('div')
@@ -1640,7 +1652,31 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       const marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
       pulseMarkersRef.current.set(room.id, marker)
     })
-  }, [pulseRooms, anchorLat, anchorLng, mapReady])
+  }, [pulseRooms, nights, anchorLat, anchorLng, mapReady])
+
+  // ── Nights at spots: a brass tag above the spot's pin ────────────────────
+  useEffect(() => {
+    nightMarkersRef.current.forEach(m => m.remove())
+    nightMarkersRef.current = []
+    if (!mapRef.current || !mapReady) return
+    const perSpot = new Map<string, number>() // stack several nights at one spot instead of piling them up
+    nights.forEach(n => {
+      const k = perSpot.get(n.spot_id) ?? 0
+      perSpot.set(n.spot_id, k + 1)
+      const live = nightWhen(n) === 'Live now'
+      const el = document.createElement('button')
+      el.type = 'button'
+      el.setAttribute('aria-label', `Night: ${n.title}, ${nightWhen(n)}`)
+      el.style.cssText = `display:flex;align-items:center;gap:6px;padding:4px 10px 4px 6px;border-radius:999px;background:rgba(23,13,18,0.88);border:1px solid ${V.brass};color:${V.ivory};font:600 11px ${VF.ui};white-space:nowrap;cursor:pointer;box-shadow:0 0 ${live ? 18 : 8}px ${V.brass}${live ? '88' : '44'};${live ? 'animation:roomGlow 2s infinite;' : ''}`
+      const moon = document.createElement('span'); moon.textContent = '🌙'
+      const txt = document.createElement('span'); txt.textContent = n.title.length > 22 ? n.title.slice(0, 21) + '…' : n.title
+      const when = document.createElement('span'); when.textContent = live ? 'LIVE' : nightWhen(n).split(' · ')[0]
+      when.style.cssText = `color:${live ? V.brassUp : V.smoke};letter-spacing:.08em;font-size:10px;`
+      el.append(moon, txt, when)
+      el.addEventListener('click', e => { e.stopPropagation(); onOpenNight?.(n) })
+      nightMarkersRef.current.push(new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -42 - k * 28] }).setLngLat([n.lng, n.lat]).addTo(mapRef.current!))
+    })
+  }, [nights, mapReady, onOpenNight])
 
   // ── Fallback: no WebGL or map kept failing → CSS canvas map ──────────────
   if (mapFailed) {
@@ -1683,6 +1719,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
           <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, transform: 'translate(-50%,-50%)', width: 120, height: 120, borderRadius: '50%', border: `1px solid ${isGhost ? C.ghost + '20' : C.accent + '30'}`, pointerEvents: 'none', zIndex: 5 }} />
           <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, transform: 'translate(-50%,-50%)', width: 200, height: 200, borderRadius: '50%', border: `1px solid ${isGhost ? C.ghost + '10' : C.accent + '15'}`, pointerEvents: 'none', zIndex: 5 }} />
           <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', border: `1px solid ${C.border2}`, borderRadius: 20, padding: '5px 12px', fontSize: 11, color: C.green, fontFamily: FONT, zIndex: 30 }}>● {presenceLabel(onlineCount)}</div>
+          {emptyOverlay}
           {!isGhost && <button onClick={onCreatePulseRoom} style={{ position: 'absolute', bottom: 'calc(76px + env(safe-area-inset-bottom))', right: 14, background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`, border: 'none', borderRadius: 16, padding: '10px 16px', color: '#fff', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, boxShadow: `0 4px 20px ${C.accent}44`, zIndex: 30 }}><span style={{ fontSize: 16 }}>📡</span> Start Pulse Room</button>}
         </div>
       </div>
@@ -1754,6 +1791,8 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
         )}
       </div>
 
+      {!pickingSpot && emptyOverlay}
+
       {/* Create Pulse Room FAB */}
       {!isGhost && !pickingSpot && (
         <button onClick={onCreatePulseRoom} style={{ position: 'absolute', bottom: 'calc(76px + env(safe-area-inset-bottom))', right: 14, background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`, border: 'none', borderRadius: 16, padding: '10px 16px', color: '#fff', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, boxShadow: `0 4px 20px ${C.accent}44`, zIndex: 30 }}>
@@ -1776,7 +1815,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
           </div>
         </>
       )}
-      {openSpot && <SpotSheet key={openSpot.id} spot={openSpot} theme={ST} onClose={() => setOpenSpot(null)} onChanged={loadSpots} />}
+      {openSpot && <SpotSheet key={openSpot.id} spot={openSpot} theme={ST} onClose={() => setOpenSpot(null)} onChanged={loadSpots} extra={spotExtra?.(openSpot, () => setOpenSpot(null))} />}
       {addSpotAt && <AddSpotSheet at={addSpotAt} theme={ST} onClose={() => setAddSpotAt(null)}
         onAdded={() => { setAddSpotAt(null); showError('📍 Spot sent for review — only you can see it for now'); loadSpots() }} />}
 
@@ -3114,6 +3153,15 @@ export default function App() {
   const handleOpenPulseRoom = pulse.open
   const handlePulseSend = (text: string) => { void pulse.send(text) }
 
+  // ── Empty map: nights at spots nearby, and the "It's early here" card ──
+  const nightsApi = useNights(gpsCoords, !!user)
+  const [openNightId, setOpenNightId] = useState<string | null>(null)
+  const openNight = nightsApi.nights.find(n => n.id === openNightId) ?? null
+  const handleOpenNight = useCallback((n: Night) => setOpenNightId(n.id), [])
+  const nightCb: Omit<NightCallbacks, 'onOpenRoom'> = { pushOn: pushState === 'on', onEnablePush: () => void enablePush(), onPatch: nightsApi.patch }
+  // "Empty" = nobody nearby is online right now (stale pins don't count), once location and the first fetch are done
+  const mapIsEmpty = locStatus === 'ok' && !nearbyLoading && !visibleNearby.some(u => u.online)
+
   useEffect(() => {
     const min = setTimeout(() => setSplashMinDone(true), 1600)
     // Failsafe: never trap the user on the splash if the network hangs
@@ -3446,7 +3494,16 @@ export default function App() {
       <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' || screen === 'videos' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, paddingBottom: screen === 'map' ? 0 : `calc(${TAB_H}px + env(safe-area-inset-bottom))` }}>
         {screen === 'map' && (
           <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} gpsCoords={gpsCoords} isPremium={IS_PREMIUM} />
+            <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} gpsCoords={gpsCoords} isPremium={IS_PREMIUM}
+              nights={nightsApi.nights} onOpenNight={handleOpenNight}
+              emptyOverlay={mapIsEmpty && (
+                <EmptyMapCard coords={gpsCoords} nights={nightsApi.nights} pushState={pushState} onEnablePush={enablePush}
+                  onInstall={() => setShowInstall(true)} onOpenNight={handleOpenNight} />
+              )}
+              spotExtra={(spot, close) => (
+                <SpotNights spot={spot} nights={nightsApi.nights} theme={ST} isAdmin={isAdmin} onChanged={() => void nightsApi.refresh()}
+                  cb={{ ...nightCb, onOpenRoom: id => { close(); handleOpenPulseRoom(id) } }} />
+              )} />
             <GoLiveButton theme={LT} live={liveEndsAt !== null} endsAt={liveEndsAt} onToggle={toggleLive} />
           </div>
         )}
@@ -3794,6 +3851,12 @@ export default function App() {
       {/* Pulse Room create modal */}
       {showPulseCreate && myProfile && (
         <PulseRoomCreateModal myProfile={myProfile} onConfirm={handleConfirmCreateRoom} onCancel={() => setShowPulseCreate(false)} />
+      )}
+
+      {openNight && (
+        <NightSheet night={openNight} theme={ST} isAdmin={isAdmin} onClose={() => setOpenNightId(null)}
+          onRemoved={() => { setOpenNightId(null); void nightsApi.refresh() }}
+          cb={{ ...nightCb, onOpenRoom: id => { setOpenNightId(null); handleOpenPulseRoom(id); setScreen('map') } }} />
       )}
 
       {/* Pulse Room overlay */}

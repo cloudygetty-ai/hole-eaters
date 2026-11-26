@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { VENUE, COMMUNITY } from '../lib/spotMarker'
 import { SPOT_KINDS, REPORT_REASONS, addSpot, checkInSpot, checkOutSpot, voteSpot, reportSpot, getSpotsForReview, moderateSpot,
   type Spot, type SpotKind, type SpotForReview } from '../lib/spots'
@@ -11,7 +11,8 @@ const sheet = (t: SpotsTheme) => ({ width: '100%', maxHeight: '86dvh', overflowY
 const overlay = { position: 'fixed' as const, inset: 0, zIndex: 870, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-end' }
 const SAFETY = 'Be discreet and respectful, and know local laws: sex in public places is illegal in many areas. Meet in public first, tell a friend where you are, and leave if anything feels off.'
 
-export function SpotSheet({ spot, theme: t, onClose, onChanged }: { spot: Spot; theme: SpotsTheme; onClose: () => void; onChanged: () => void }) {
+/** `extra` renders under the check-in and vote buttons (nights at this spot). */
+export function SpotSheet({ spot, theme: t, onClose, onChanged, extra }: { spot: Spot; theme: SpotsTheme; onClose: () => void; onChanged: () => void; extra?: ReactNode }) {
   const [s, setS] = useState(spot)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
@@ -75,6 +76,8 @@ export function SpotSheet({ spot, theme: t, onClose, onChanged }: { spot: Spot; 
             <button disabled={busy} onClick={() => vote(false)} style={btn(s.my_vote === false)}>👎 Gone</button>
           </div>
         </>}
+
+        {extra}
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <a href={`https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`} target="_blank" rel="noopener noreferrer"
