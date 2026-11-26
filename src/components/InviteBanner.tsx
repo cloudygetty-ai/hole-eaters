@@ -53,6 +53,8 @@ export function InviteBanner({ name, theme }: { name?: string; theme: InviteThem
           {copied ? '✓ Copied' : 'Share'}
         </button>
       </div>
+      {/* Invitees often ask "is it safe?" first; the public page answers without a login. */}
+      <a href="/safety" target="_blank" rel="noopener" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: theme.dim }}>How we keep it safe →</a>
     </div>
   )
 }
