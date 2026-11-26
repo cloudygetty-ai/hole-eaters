@@ -47,6 +47,7 @@ export default defineConfig({
         privacy: path.resolve(__dirname, 'privacy.html'),
         terms: path.resolve(__dirname, 'terms.html'),
         usc2257: path.resolve(__dirname, '2257.html'),
+        safety: path.resolve(__dirname, 'safety.html'),
       },
     },
   },
