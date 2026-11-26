@@ -1,5 +1,6 @@
 import { initGate } from './gate'
 import { captureAttribution, isInAppBrowser } from '../lib/attribution'
+import { logPromoVisit } from '../lib/promo'
 
 // Landing "Put it on your Home Screen" section: show the steps for the visitor's phone.
 // Hole Eaters ships as a web app only (no native iPhone/Android apps planned), so this replaces the old app waitlist.
@@ -47,3 +48,4 @@ if (isInAppBrowser() && !standalone) {
 
 captureAttribution()
 initGate()
+logPromoVisit()

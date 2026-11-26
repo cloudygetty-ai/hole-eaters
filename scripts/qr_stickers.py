@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Printable QR sticker sheets for venue/event drops.
 
-Each venue gets its own tracked link (utm_source=qr_<slug>), which the landing page
-records as the waitlist `source`, so signups per venue show up in Supabase.
+Each venue gets its own short link, hole-eaters.com/v/<slug>, which vercel.json redirects to
+/?src=qr-<slug>, so visitors and sign-ups per venue show up in Admin > Stats > Promo sources.
+Short links also make smaller, easier-to-scan codes.
 
 Usage:
   pip install segno pillow
@@ -20,7 +21,7 @@ from pathlib import Path
 import segno
 from PIL import Image, ImageDraw, ImageFont
 
-SITE = 'https://www.hole-eaters.com/'
+SITE = 'https://www.hole-eaters.com'
 DPI = 300
 STICKER_IN = 2.5
 PAGE_W, PAGE_H = int(8.5 * DPI), int(11 * DPI)
@@ -29,7 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def tracked_url(slug: str) -> str:
-    return f'{SITE}?utm_source=qr_{slug}'
+    return f'{SITE}/v/{slug}'
 
 
 def load_font(font_dir: Path | None, name: str, size: int) -> ImageFont.ImageFont:
@@ -63,7 +64,8 @@ def sticker(slug: str, font_dir: Path | None) -> Image.Image:
     small = load_font(font_dir, 'InstrumentSans.ttf', int(size * 0.042))
     d.text((size // 2, int(size * 0.17)), "Who's near?", font=title, fill=IVORY, anchor='mm')
     d.text((size // 2, int(size * 0.83)), 'SCAN · 18+', font=small, fill=BRASS, anchor='mm')
-    d.text((size // 2, int(size * 0.89)), 'hole-eaters.com', font=small, fill=EMBER, anchor='mm')
+    label = f'hole-eaters.com/v/{slug}' if len(slug) <= 12 else 'hole-eaters.com'  # long slugs overflow the circle
+    d.text((size // 2, int(size * 0.89)), label, font=small, fill=EMBER, anchor='mm')
     return img
 
 
@@ -87,7 +89,7 @@ def main() -> int:
     ap.add_argument('--fonts', type=Path, default=None)
     args = ap.parse_args()
 
-    slugs = [re.sub(r'[^a-z0-9_-]', '', v.lower())[:56] for v in args.venues]
+    slugs = [re.sub(r'[^a-z0-9-]', '', v.lower())[:30] for v in args.venues]  # must match /v/:slug in vercel.json
     if not all(slugs):
         print('Venue slugs must contain letters or numbers.', file=sys.stderr)
         return 1

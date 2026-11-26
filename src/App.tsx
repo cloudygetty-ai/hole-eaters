@@ -15,10 +15,14 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
 import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, getMyPrivate, savePrivacy, saveTimezone, getResponsiveness, getChatPrefs, type Privacy, ensureUserId, signChatMedia, blockUser, getBlockedIds, postGlobalMessage, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
-import { claimStoredReferral } from './lib/referrals'
+import { claimStoredReferral, claimSignupSource } from './lib/referrals'
+import { logPromoVisit } from './lib/promo'
+import { PromoStats } from './components/PromoStats'
 import { presenceLabel } from './lib/presenceLabel'
 import { registerWebPush, startPresence, unregisterWebPush, useOnlineIds } from './lib/citadel'
 import { InviteBanner } from './components/InviteBanner'
+import { PerkChips, SPOTLIGHT_GOLD } from './components/PerkChips'
+import { useInvitePerks, useInviteRewardNotice } from './lib/useInvitePerks'
 import type { User } from '@supabase/supabase-js'
 import { CoverBanner } from './components/CoverBanner'
 import { ReviewsPanel, ReviewBadge, MyReviewsCard, type ReviewsTheme } from './components/Reviews'
@@ -286,6 +290,9 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
                 <span style={{ fontSize: 16, color: C.muted }}>{user.age}</span>
                 <span style={{ marginLeft: 'auto', fontSize: 12, color: user.color, background: `${user.color}22`, padding: '3px 10px', borderRadius: 20, fontWeight: 600 }}>{user.role}</span>
               </div>
+              {(user.spotlight || user.founder) && (
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}><PerkChips spotlight={user.spotlight} founder={user.founder} /></div>
+              )}
               <ReviewBadge summary={reviewSummary} theme={RT} onClick={() => setTab('reviews')} />
               {replyRate != null && (
                 <div style={{ display: 'inline-block', fontSize: 12, color: C.muted, background: C.surf3, padding: '3px 10px', borderRadius: 10, marginBottom: 10 }}>
@@ -1611,13 +1618,16 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       const el = document.createElement('div')
       el.style.cssText = `display:flex;flex-direction:column;align-items:center;cursor:pointer;`
       const avatar = document.createElement('div')
-      avatar.style.cssText = `width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,${u.color}88,${u.color}22);border:2px solid ${u.color};display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 2px 14px ${u.color}44;transition:transform .15s;`
+      // Spotlight (invite reward): gold ring and glow, drawn above other pins
+      const ring = u.spotlight ? `border:3px solid ${SPOTLIGHT_GOLD};box-shadow:0 0 0 3px ${SPOTLIGHT_GOLD}33,0 0 22px ${SPOTLIGHT_GOLD}aa;` : `border:2px solid ${u.color};box-shadow:0 2px 14px ${u.color}44;`
+      avatar.style.cssText = `width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,${u.color}88,${u.color}22);${ring}display:flex;align-items:center;justify-content:center;font-size:20px;transition:transform .15s;`
       avatar.textContent = u.emoji ?? '🔥'
       avatar.onmouseenter = () => { avatar.style.transform = 'scale(1.12)' }
       avatar.onmouseleave = () => { avatar.style.transform = 'scale(1)' }
       const label = document.createElement('div')
       label.style.cssText = `font-size:10px;color:#9497aa;margin-top:3px;white-space:nowrap;font-family:'DM Mono',monospace;background:rgba(8,9,13,0.75);padding:2px 7px;border-radius:5px;backdrop-filter:blur(4px);`
-      label.textContent = u.name
+      label.textContent = u.spotlight ? `🔦 ${u.name}` : u.name
+      if (u.spotlight) { label.style.color = SPOTLIGHT_GOLD; el.style.zIndex = '2' }
       el.appendChild(avatar); el.appendChild(label)
       el.addEventListener('click', () => onSelectUser(u))
       const marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
@@ -2573,6 +2583,7 @@ function AdminDashboard({ onClose }: { onClose: () => void }) {
             {secRun.results.filter(r => !r.ok).map(r => <div key={r.what} style={{ fontSize: 12, color: '#ef4444', marginTop: 6 }}>✗ {r.what}</div>)}
           </div>
         )}
+        {!loading && tab === 'stats' && <PromoStats theme={{ surf2: C.surf2, border: C.border, text: C.text, dim: C.dim, accent: C.accent }} />}
         {!loading && tab === 'stats' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {stats && Object.entries(stats).map(([key, val]) => (
@@ -2879,6 +2890,7 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
 type Screen = 'map' | 'list' | 'videos' | 'matches' | 'global' | 'profile'
 
 export default function App() {
+  useEffect(() => { logPromoVisit() }, []) // ?src= links that skip the landing (signed-in visitors)
   const [user, setUser] = useState<User | null>(null)
   // Boot gate: splash stays up until auth + first profile lookup settle (min 1.6s, max 5s)
   const [authReady, setAuthReady] = useState(false)
@@ -2906,11 +2918,19 @@ export default function App() {
   // as soon as real users loaded); memoized so map pins aren't rebuilt per render.
   // Live presence (Citadel) overrides the sticky profiles.online flag; null = Citadel off → keep the flag.
   const onlineIds = useOnlineIds()
+  // Invite rewards (Spotlight, Founding Eater) for real profiles on screen; empty until the RPC answers.
+  const perkIds = useMemo(() => nearby.filter(u => !(u as any).isSeed).map(u => u.id), [nearby])
+  const invitePerks = useInvitePerks(perkIds)
+  useInviteRewardNotice(user?.id, !!myProfile?.name)
   const visibleNearby = useMemo(
     () => nearby
       .filter(u => (u as any).isSeed || (!blockedIds.has(u.id) && !passedIds.has(u.id)))
-      .map(u => onlineIds && !(u as any).isSeed ? { ...u, online: onlineIds.has(u.id) } : u),
-    [nearby, blockedIds, passedIds, onlineIds],
+      .map(u => {
+        if ((u as any).isSeed) return u
+        const perk = invitePerks.get(u.id)
+        return { ...u, ...(onlineIds ? { online: onlineIds.has(u.id) } : {}), spotlight: perk?.spotlight, founder: perk?.founder }
+      }),
+    [nearby, blockedIds, passedIds, onlineIds, invitePerks],
   )
 
   // End-to-end encryption: make sure this device has a chat key once the profile exists (keys belong to a profile)
@@ -3388,6 +3408,7 @@ export default function App() {
     localStorage.setItem('he_local_profile', JSON.stringify(data))
     localStorage.setItem('he_profile_user_id', currentUser.id)
     claimStoredReferral().catch(() => {})
+    claimSignupSource().catch(() => {})
     return null
   }
 
@@ -3511,9 +3532,11 @@ export default function App() {
         {screen === 'list' && !nearbyLoading && (() => {
           // Collect all unique tags from visible users
           const allTags = [...new Set(visibleNearby.flatMap(u => u.tags ?? []))].sort()
-          const filtered = activeTagFilter
+          const tagged = activeTagFilter
             ? visibleNearby.filter(u => u.tags?.includes(activeTagFilter))
             : visibleNearby
+          // Spotlight (invite reward) rows go first; sort is stable, so everyone else keeps distance order
+          const filtered = [...tagged].sort((a, b) => Number(!!b.spotlight) - Number(!!a.spotlight))
           return (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               {/* Tag filter bar */}
@@ -3553,7 +3576,7 @@ export default function App() {
                     ? (distM < 50 ? 'right here' : distM < 1000 ? `${Math.round(distM / 10) * 10}m` : `${(distM / 1609.34).toFixed(1)}mi`)
                     : null
                   return (
-                    <div key={u.id} onClick={() => setSelectedUser(u)} style={{ display: 'flex', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                    <div key={u.id} onClick={() => setSelectedUser(u)} style={{ display: 'flex', gap: 12, padding: '14px 16px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', background: u.spotlight ? `${SPOTLIGHT_GOLD}0d` : undefined }}>
                       <Avatar user={u} size={50} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -3562,6 +3585,7 @@ export default function App() {
                           {distLabel && (
                             <span style={{ fontSize: 10, color: C.green, background: `${C.green}18`, padding: '2px 7px', borderRadius: 8, fontFamily: FONT, fontWeight: 600 }}>📍 {distLabel}</span>
                           )}
+                          <PerkChips spotlight={u.spotlight} founder={u.founder} />
                           <span style={{ marginLeft: 'auto', fontSize: 11, color: u.color, background: `${u.color}22`, padding: '2px 8px', borderRadius: 10 }}>{u.role}</span>
                         </div>
                         <div style={{ fontSize: 13, color: C.dim, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.bio || 'No bio'}</div>
