@@ -114,6 +114,8 @@ export class FakeBackend {
     await context.addInitScript(([key, session]) => {
       try {
         localStorage.setItem('he_install_snooze_until', String(Date.now() + 864e5))
+        // Most tests start on an empty map; keep the "It's early here" card folded so it covers nothing (empty-map.spec unfolds it)
+        if (localStorage.getItem('he_empty_map_collapsed') === null) localStorage.setItem('he_empty_map_collapsed', '1')
         if (session && !localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(session))
       } catch { /* noop */ }
     }, [AUTH_STORAGE_KEY, signedIn && user ? sessionFor(user) : null] as const)

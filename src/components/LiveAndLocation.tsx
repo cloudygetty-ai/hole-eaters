@@ -44,15 +44,18 @@ const STEPS: Record<ReturnType<typeof locationPlatform>, { title: string; steps:
 }
 
 /** Slim banner shown while location is blocked; opens step-by-step help. */
-export function LocationBlockedBanner({ theme: t, status, onRetry }: { theme: LiveTheme; status: 'denied' | 'unavailable'; onRetry: () => void }) {
+export function LocationBlockedBanner({ theme: t, status, onRetry }: { theme: LiveTheme; status: 'denied' | 'unavailable' | 'off'; onRetry: () => void }) {
   const [open, setOpen] = useState(false)
   const help = STEPS[locationPlatform()]
   return (
     <>
-      <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'rgba(239,68,68,0.12)', borderBottom: '1px solid rgba(239,68,68,0.35)', fontSize: 12, color: t.text, flexShrink: 0 }}>
+      {/* 'off' is a choice ("Not now"), not a failure: calm styling, and the tap itself is the permission ask */}
+      <div role={status === 'off' ? 'status' : 'alert'} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: status === 'off' ? t.surf2 : 'rgba(239,68,68,0.12)', borderBottom: `1px solid ${status === 'off' ? t.border2 : 'rgba(239,68,68,0.35)'}`, fontSize: 12, color: t.text, flexShrink: 0 }}>
         <span style={{ fontSize: 16 }}>📍</span>
-        <span style={{ flex: 1 }}>{status === 'denied' ? 'Location is blocked, so nobody nearby can see you.' : 'Couldn’t get your location.'}</span>
-        {status === 'denied'
+        <span style={{ flex: 1 }}>{status === 'off' ? 'Location is off. Turn it on to see who’s near.' : status === 'denied' ? 'Location is blocked, so nobody nearby can see you.' : 'Couldn’t get your location.'}</span>
+        {status === 'off'
+          ? <button onClick={onRetry} style={{ minHeight: 32, padding: '6px 11px', borderRadius: 9, background: t.accent, color: '#fff', fontWeight: 800, fontSize: 12 }}>Turn on</button>
+          : status === 'denied'
           ? <button onClick={() => setOpen(true)} style={{ padding: '6px 11px', borderRadius: 9, background: '#ef4444', color: '#fff', fontWeight: 800, fontSize: 12 }}>Fix it</button>
           : <button onClick={onRetry} style={{ padding: '6px 11px', borderRadius: 9, background: t.surf3, color: t.text, fontWeight: 700, fontSize: 12 }}>Try again</button>}
       </div>

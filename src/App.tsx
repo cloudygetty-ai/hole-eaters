@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
 import * as maplibregl from "maplibre-gl";
 import { SpotSheet, AddSpotSheet, SpotsReviewQueue, type SpotsTheme } from './components/Spots'
 import { spotMarkerEl } from './lib/spotMarker'
 import { MediaImg, MediaVideo } from './components/Media'
 import { LocationBlockedBanner, GoLiveButton, type LiveTheme } from './components/LiveAndLocation'
-import { holdWakeLock, watchLocationPermission, LIVE_MAX_MS, LIVE_SYNC_MS, NORMAL_SYNC_MS, type LocStatus } from './lib/goLive'
+import { holdWakeLock, watchLocationPermission, LIVE_MAX_MS, LIVE_SYNC_MS, NORMAL_SYNC_MS, type LocStatus, deferLocation, clearLocationDeferred, locationDeferred, requestLocationOnce } from './lib/goLive'
+import { C as V, F as VF, T as VTYPE } from './styles/tokens'
 import { getSpots, requestVenues, shouldRequestVenues, type Spot } from './lib/spots'
 // v6 loads its tile worker from a separate file; let Vite bundle it and point MapLibre at it
 import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
@@ -44,6 +45,10 @@ import { MAX_UPLOAD_MB, uploadErrorMessage, uploadTooBig } from './lib/uploadLim
 import type { ProfileDetails } from './lib/profileDetails'
 import { VideoFeed, type VideoTheme } from './components/VideoFeed'
 import { AccountGate } from './components/AccountGate'
+import { usePulseRooms, PULSE_TTL, type PulseRoom } from './lib/pulseRooms'
+import { useNights, nightWhen, type Night } from './lib/nights'
+import { EmptyMapCard } from './components/EmptyMapCard'
+import { NightSheet, SpotNights, type NightCallbacks } from './components/Nights'
 import { VideoModeration } from './components/VideoModeration'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -54,6 +59,7 @@ const C = {
   accent: '#ff4d6d', green: '#22c55e', blue: '#4d79ff', amber: '#eab308',
   purple: '#a855f7', orange: '#f97316', ghost: '#64ffda', pulse: '#ff4d6d',
 }
+const VT_LABEL: React.CSSProperties = { ...VTYPE.label }
 const DT: DetailsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim }
 const FONT = "'DM Mono', 'Fira Code', monospace"
 const TT: TodTheme = { accent: C.accent, surf2: C.surf2, surf3: C.surf3, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim }
@@ -85,7 +91,6 @@ const ROLES = ['Top', 'Power Top', 'Bottom', 'Power Bottom', 'Versatile', 'Side'
 const EMOJIS = ['🔥', '🐷', '🐻', '😈', '💦', '👅', '⛓️', '🌈']
 const COLORS = [C.accent, C.purple, C.orange, '#ec4899', '#06b6d4', '#10b981']
 const CRUISING = ['Hosting now', 'In my car', 'Come find me', 'Down for whatever', 'Just looking']
-const PULSE_TTL = 60 * 60 * 1000 // 60 min
 // Every feature is free for everyone (Ghost Mode, Street View, ...). Flip this back to gate features later.
 const IS_PREMIUM = true
 
@@ -119,8 +124,6 @@ const GCSS = `
 \``
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface PulseMsg { id: string; senderId: string; senderName: string; senderEmoji: string; senderColor: string; content: string; ts: number }
-interface PulseRoom { id: string; name: string; creatorId: string; creatorName: string; memberIds: string[]; messages: PulseMsg[]; expiresAt: number; pulseColor: string }
 
 // Map entries are real profiles; `isSeed` is kept only as an optional flag on old code paths.
 type SeedWithAI = Profile & { isSeed?: boolean }
@@ -858,7 +861,7 @@ const DRIPS = [{ x: 18, h: 44 }, { x: 34, h: 26 }, { x: 50, h: 38 }, { x: 66, h:
 
 function Splash() {
   return (
-    <div className="he-splash" role="status" aria-label="Loading The Hole Eaters" style={{ position: 'fixed', inset: 0, background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+    <div className="he-splash" role="status" aria-label="Loading Hole Eaters" style={{ position: 'fixed', inset: 0, background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
       <style>{SPLASH_CSS}</style>
       <div style={{ position: 'relative', width: 240 }}>
         {/* Glow sits behind the image: a filter on the image itself would outline its black square */}
@@ -879,73 +882,80 @@ function Splash() {
 }
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
+// Two screens, then the map: who you are (18+) and location. Everything else (role, stats, photo,
+// bio…) is asked later from FinishProfileNudge → ProfileEditor, after the person has seen value.
+// Styled with the Velvet Room tokens so it reads as the same product as the landing page.
+const OB_CSS = `
+.he-ob input { width: 100%; min-height: 50px; padding: 0 14px; border-radius: 2px; outline: none;
+  background: rgba(9,6,8,.6); border: 1px solid ${V.hairline}; color: ${V.ivory}; font: 400 16px ${VF.ui}; }
+.he-ob input:focus { border-color: ${V.brass}; }
+.he-ob input::placeholder { color: rgba(239,230,218,.32); }
+.he-ob-btn { width: 100%; min-height: 52px; border-radius: 2px; border: 1px solid transparent; cursor: pointer;
+  font: 700 13px/1 ${VF.ui}; letter-spacing: .16em; text-transform: uppercase; transition: background .2s, opacity .2s; }
+.he-ob-btn--ember { background: ${V.ember}; color: #fff; box-shadow: 0 10px 34px rgba(178,43,68,.35); }
+.he-ob-btn--ember:disabled { background: ${V.velvet2}; color: ${V.smoke}; box-shadow: none; cursor: default; }
+.he-ob-link { display: block; min-height: 44px; margin: 10px auto 0; padding: 0 12px; background: none; border: 0; cursor: pointer;
+  color: ${V.smoke}; font: 400 14px ${VF.ui}; }
+.he-ob-link b { color: ${V.brassUp}; font-weight: 700; }
+@keyframes he-ob-in { from { opacity: 0; transform: translateY(10px) } }
+.he-ob-step { animation: he-ob-in .45s cubic-bezier(.22,1,.36,1) both; }
+@media (prefers-reduced-motion: reduce) { .he-ob-step { animation: none } }
+`
+
 function Onboarding({ onComplete, onSignIn }: { onComplete: (p: Partial<Profile>) => Promise<string | null>; onSignIn: () => void }) {
-  const [step, setStep] = useState(0)
-  const [saving, setSaving] = useState(false)
+  const [step, setStep] = useState<0 | 1>(0)
+  const [name, setName] = useState('')
+  const [age, setAge] = useState('')
+  const [busy, setBusy] = useState(false)
   const [saveErr, setSaveErr] = useState('')
-  const [form, setForm] = useState({ name: '', age: '', role: 'Versatile', bio: '', emoji: '🔥', color: C.accent, tags: [] as string[], photo_url: null as string | null, video_url: null as string | null, details: {} as ProfileDetails })
-  const setDetails = (details: ProfileDetails) => setForm(f => ({ ...f, details }))
-  const [newTag, setNewTag] = useState('')
-  const inputStyle: React.CSSProperties = { background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 12, padding: '13px 16px', color: C.text, fontSize: 15, width: '100%', outline: 'none' }
+  const identityValid = name.trim().length > 0 && Number(age) >= 18 && Number(age) < 100
 
-  const steps = [
-    { title: "What do they call you?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Your name or handle" style={inputStyle} /><input value={form.age} onChange={e => setForm(f => ({ ...f, age: e.target.value }))} placeholder="Age (18+)" type="number" style={inputStyle} /><div style={{ fontSize: 12, color: C.dim, lineHeight: 1.5 }}>By continuing you confirm you're 18 or older and agree to our <a href="/terms" target="_blank" rel="noopener" style={{ color: C.muted }}>Terms</a> and <a href="/privacy" target="_blank" rel="noopener" style={{ color: C.muted }}>Privacy Policy</a>.</div></div>), valid: () => form.name.trim().length > 0 && Number(form.age) >= 18 },
-    { title: "Your role?", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{ROLES.map(r => (<button key={r} onClick={() => setForm(f => ({ ...f, role: r }))} style={{ padding: '14px', borderRadius: 12, background: form.role === r ? `${C.accent}22` : C.surf3, border: `1px solid ${form.role === r ? C.accent : C.border2}`, color: form.role === r ? C.accent : C.text, fontWeight: form.role === r ? 700 : 400, fontSize: 15, textAlign: 'left' }}>{r}</button>))}</div>), valid: () => true },
-    { title: "Welcome to Hole Eaters 🍑 First, the important question", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['eating']} theme={DT} />), valid: () => true },
-    { title: "Your stats", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['stats']} theme={DT} />), valid: () => true },
-    { title: "What you're into", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['interests']} theme={DT} />), valid: () => true },
-    { title: "Sexual health", content: (<ProfileDetailsFields value={form.details} onChange={setDetails} sections={['health']} theme={DT} />), valid: () => true },
-    { title: "Your vibe", content: (() => {
-      const VIBES = [
-        { id: 'friends', label: 'Friends', sub: 'Chat & hang out',     emoji: '🤝', color: C.purple },
-        { id: 'hookup',  label: 'Hookup',  sub: 'No strings attached', emoji: '🔥', color: C.accent },
-        { id: 'connect', label: 'Connect', sub: 'Something real',       emoji: '⚡', color: C.blue   },
-        { id: 'explore', label: 'Explore', sub: 'Just looking',          emoji: '👁️', color: C.ghost  },
-      ]
-      return (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {VIBES.map(v => {
-            const sel = form.emoji === v.emoji
-            return (
-              <button key={v.id} onClick={() => setForm(f => ({ ...f, emoji: v.emoji, color: v.color }))}
-                style={{ position: 'relative', background: sel ? `${v.color}18` : C.surf3, border: `1.5px solid ${sel ? v.color : C.border2}`, borderRadius: 14, padding: '18px 14px 14px', textAlign: 'left', overflow: 'hidden', transition: 'all 0.15s' }}>
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: sel ? v.color : 'transparent', borderRadius: '14px 14px 0 0', transition: 'background 0.15s' }} />
-                <div style={{ fontSize: 22, marginBottom: 8 }}>{v.emoji}</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: sel ? v.color : C.text, marginBottom: 3 }}>{v.label}</div>
-                <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.4 }}>{v.sub}</div>
-              </button>
-            )
-          })}
-        </div>
-      )
-    })(), valid: () => true },
-    { title: "Add a photo", content: (<MediaUploadStep photoUrl={form.photo_url} videoUrl={form.video_url ?? null} color={form.color} emoji={form.emoji} onPhoto={(url) => setForm(f => ({ ...f, photo_url: url }))} onVideo={(url) => setForm(f => ({ ...f, video_url: url }))} />), valid: () => true },
-    { title: "Tell them something", content: (<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}><textarea value={form.bio} onChange={e => setForm(f => ({ ...f, bio: e.target.value }))} placeholder="Bio (optional)" rows={3} style={{ ...inputStyle, resize: 'none' }} /><input value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newTag.trim()) { setForm(f => ({ ...f, tags: [...f.tags, newTag.trim()] })); setNewTag('') } }} placeholder="Add tag (Enter)" style={{ ...inputStyle }} /><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{form.tags.map(t => (<span key={t} onClick={() => setForm(f => ({ ...f, tags: f.tags.filter(x => x !== t) }))} style={{ fontSize: 12, color: C.dim, background: C.surf3, padding: '4px 10px', borderRadius: 12, cursor: 'pointer' }}>{t} ✕</span>))}</div></div>), valid: () => true },
-  ]
+  const finish = async (withLocation: boolean) => {
+    if (busy) return
+    setBusy(true); setSaveErr('')
+    if (withLocation) { clearLocationDeferred(); await requestLocationOnce() } else deferLocation()
+    const err = await onComplete({ name: name.trim(), age: Number(age) })
+    setBusy(false)
+    if (err) setSaveErr(err)
+  }
 
+  const label: React.CSSProperties = { ...VT_LABEL, display: 'block', marginBottom: 8 }
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: 'max(24px, env(safe-area-inset-top)) 24px 24px' }}>
-      <style>{GCSS}</style>
-      <div style={{ width: '100%', maxWidth: 400, marginTop: 24 }}>
-        {step === 0 && <img src="/brand/logo.webp" alt="The Hole Eaters" width={160} style={{ display: 'block', margin: '0 auto 24px', height: 'auto', mixBlendMode: 'lighten' }} />}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 32 }}>{steps.map((_, i) => (<div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= step ? C.accent : C.surf3, transition: 'background 0.3s' }} />))}</div>
-        <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 24 }}>{steps[step].title}</div>
-        {steps[step].content}
-        {saveErr && <div role="alert" style={{ color: '#ef4444', fontSize: 13, marginTop: 16 }}>{saveErr}</div>}
-        <button onClick={async () => {
-          if (!steps[step].valid() || saving) return
-          if (step < steps.length - 1) { setStep(s => s + 1); return }
-          setSaving(true); setSaveErr('')
-          const err = await onComplete({ ...form, age: Number(form.age) })
-          setSaving(false)
-          if (err) setSaveErr(err)
-        }} disabled={!steps[step].valid() || saving} style={{ width: '100%', marginTop: 24, padding: '15px', borderRadius: 14, background: steps[step].valid() && !saving ? C.accent : C.surf3, color: steps[step].valid() && !saving ? '#fff' : C.dim, fontWeight: 700, fontSize: 16, transition: 'all 0.15s' }}>
-          {step < steps.length - 1 ? 'Continue →' : saving ? 'Saving…' : saveErr ? 'Try again' : 'Enter the Map'}
-        </button>
-        {step === 0 && (
-          <button onClick={onSignIn} style={{ display: 'block', margin: '18px auto 0', color: C.muted, fontSize: 14 }}>
-            Already have an account? <span style={{ color: C.accent, fontWeight: 700 }}>Sign in</span>
-          </button>
+    <div className="he-ob" style={{ minHeight: '100dvh', background: `radial-gradient(90vw 60vh at 10% -10%, rgba(178,43,68,.22), transparent 62%), ${V.ink}`, color: V.ivory, fontFamily: VF.ui, display: 'flex', justifyContent: 'center', padding: 'max(24px, env(safe-area-inset-top)) 22px calc(24px + env(safe-area-inset-bottom))' }}>
+      <style>{OB_CSS}</style>
+      <div style={{ width: '100%', maxWidth: 400, marginTop: 8 }}>
+        <img src="/brand/logo.webp" alt="Hole Eaters" width={step === 0 ? 132 : 88} style={{ display: 'block', margin: '0 auto 18px', height: 'auto', mixBlendMode: 'lighten', transition: 'width .3s' }} />
+        <div aria-label={`Step ${step + 1} of 2`} style={{ display: 'flex', gap: 6, marginBottom: 28 }}>
+          {[0, 1].map(i => <div key={i} style={{ flex: 1, height: 2, background: i <= step ? V.emberUp : V.velvet2, transition: 'background .3s' }} />)}
+        </div>
+
+        {step === 0 ? (
+          <div className="he-ob-step" key="who">
+            <div style={{ ...VT_LABEL, marginBottom: 10 }}>After hours · 18+</div>
+            <h1 style={{ fontFamily: VF.display, fontWeight: 900, fontSize: 34, lineHeight: 1, letterSpacing: '-0.02em', margin: '0 0 24px' }}>What do they<br /><em style={{ fontWeight: 500, color: V.emberUp }}>call you?</em></h1>
+            <label style={label} htmlFor="ob-name">Name or handle</label>
+            <input id="ob-name" value={name} onChange={e => setName(e.target.value)} placeholder="Your name or handle" autoComplete="nickname" maxLength={40} />
+            <label style={{ ...label, marginTop: 16 }} htmlFor="ob-age">Age</label>
+            <input id="ob-age" value={age} onChange={e => setAge(e.target.value.replace(/\D/g, '').slice(0, 2))} placeholder="Age (18+)" type="number" inputMode="numeric" />
+            {age !== '' && Number(age) < 18 && <div role="alert" style={{ marginTop: 8, fontSize: 13, color: V.emberUp }}>Hole Eaters is for adults 18 and over.</div>}
+            <p style={{ fontSize: 13, color: V.smoke, lineHeight: 1.55, margin: '16px 0 22px' }}>
+              Hole Eaters is for everyone 18 and over. By continuing you confirm you&rsquo;re 18+ and agree to our <a href="/terms" target="_blank" rel="noopener" style={{ color: V.brassUp }}>Terms</a> and <a href="/privacy" target="_blank" rel="noopener" style={{ color: V.brassUp }}>Privacy Policy</a>.
+            </p>
+            <button className="he-ob-btn he-ob-btn--ember" disabled={!identityValid} onClick={() => identityValid && setStep(1)}>I&rsquo;m 18+ — let me in</button>
+            <button className="he-ob-link" onClick={onSignIn}>Already have an account? <b>Sign in</b></button>
+          </div>
+        ) : (
+          <div className="he-ob-step" key="where">
+            <div style={{ ...VT_LABEL, marginBottom: 10 }}>Last step</div>
+            <h1 style={{ fontFamily: VF.display, fontWeight: 900, fontSize: 34, lineHeight: 1, letterSpacing: '-0.02em', margin: '0 0 16px' }}>See who&rsquo;s<br /><em style={{ fontWeight: 500, color: V.emberUp }}>around you.</em></h1>
+            <p style={{ fontSize: 15, color: V.smoke, lineHeight: 1.55, margin: '0 0 12px' }}>
+              Your exact spot is never shown. Other guys see a rough distance, and only when you&rsquo;re not in Ghost Mode.
+            </p>
+            <p style={{ fontSize: 13, color: V.whisper, lineHeight: 1.5, margin: '0 0 24px' }}>Your phone will ask next. Tap <b style={{ color: V.ivory }}>Allow</b> to fill the map.</p>
+            {saveErr && <div role="alert" style={{ color: V.emberUp, fontSize: 13, margin: '0 0 12px' }}>{saveErr}</div>}
+            <button className="he-ob-btn he-ob-btn--ember" disabled={busy} onClick={() => finish(true)}>{busy ? 'Opening the map…' : saveErr ? 'Try again' : 'Turn on location'}</button>
+            <button className="he-ob-link" disabled={busy} onClick={() => finish(false)}>Not now — look around first</button>
+          </div>
         )}
       </div>
     </div>
@@ -1225,7 +1235,7 @@ function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoo
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
-  const pct = Math.max(0, (timeLeft / PULSE_TTL) * 100)
+  const pct = Math.min(100, Math.max(0, (timeLeft / PULSE_TTL) * 100)) // night rooms run longer than an hour
 
   const send = () => {
     if (!input.trim()) return
@@ -1374,18 +1384,25 @@ function setBuildings3d(map: maplibregl.Map, on: boolean) {
   if (map.getLayer('building')) map.setLayoutProperty('building', 'visibility', on ? 'none' : 'visible')
 }
 
-function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost, onOpenPulseRoom, pulseRooms, onCreatePulseRoom, gpsCoords, isPremium }: {
+function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost, onOpenPulseRoom, pulseRooms, onCreatePulseRoom, gpsCoords, isPremium, nights = [], onOpenNight, emptyOverlay, spotExtra }: {
   myProfile: Partial<Profile>; nearby: (Profile & { isSeed?: boolean })[]; myPos: { x: number; y: number };
   onMovePin: (p: { x: number; y: number }) => void; onSelectUser: (u: Profile & { isSeed?: boolean }) => void;
   isGhost: boolean; onOpenPulseRoom: (id: string) => void;
   pulseRooms: PulseRoom[]; onCreatePulseRoom: () => void;
   gpsCoords: { lat: number; lng: number } | null; isPremium: boolean;
+  /** Nights at spots nearby: drawn as beacons at the spot; a live night's room shows there, not in the ring. */
+  nights?: Night[]; onOpenNight?: (n: Night) => void;
+  /** The empty-map card; hidden while picking a spot. */
+  emptyOverlay?: ReactNode;
+  /** Extra content inside a spot's sheet (its nights). `close` closes the sheet. */
+  spotExtra?: (spot: Spot, close: () => void) => ReactNode;
 }) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const myMarkerRef = useRef<maplibregl.Marker | null>(null)
   const nearbyMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const pulseMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
+  const nightMarkersRef = useRef<maplibregl.Marker[]>([])
   const spotMarkersRef = useRef<maplibregl.Marker[]>([])
   const [mapReady, setMapReady] = useState(false)
   // Cruising spots layer
@@ -1623,8 +1640,10 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
     if (!mapRef.current || !mapReady) return
     pulseMarkersRef.current.forEach(m => m.remove())
     pulseMarkersRef.current.clear()
-    pulseRooms.filter(r => Date.now() < r.expiresAt).forEach((room, i) => {
-      const angle = (i / Math.max(pulseRooms.length, 1)) * Math.PI * 2
+    const nightRooms = new Set(nights.map(n => n.room_id).filter(Boolean))
+    const ringRooms = pulseRooms.filter(r => Date.now() < r.expiresAt && !nightRooms.has(r.id))
+    ringRooms.forEach((room, i) => {
+      const angle = (i / Math.max(ringRooms.length, 1)) * Math.PI * 2
       const lat = anchorLat + Math.sin(angle) * 0.0012
       const lng = anchorLng + Math.cos(angle) * 0.0015
       const el = document.createElement('div')
@@ -1643,7 +1662,31 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       const marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
       pulseMarkersRef.current.set(room.id, marker)
     })
-  }, [pulseRooms, anchorLat, anchorLng, mapReady])
+  }, [pulseRooms, nights, anchorLat, anchorLng, mapReady])
+
+  // ── Nights at spots: a brass tag above the spot's pin ────────────────────
+  useEffect(() => {
+    nightMarkersRef.current.forEach(m => m.remove())
+    nightMarkersRef.current = []
+    if (!mapRef.current || !mapReady) return
+    const perSpot = new Map<string, number>() // stack several nights at one spot instead of piling them up
+    nights.forEach(n => {
+      const k = perSpot.get(n.spot_id) ?? 0
+      perSpot.set(n.spot_id, k + 1)
+      const live = nightWhen(n) === 'Live now'
+      const el = document.createElement('button')
+      el.type = 'button'
+      el.setAttribute('aria-label', `Night: ${n.title}, ${nightWhen(n)}`)
+      el.style.cssText = `display:flex;align-items:center;gap:6px;padding:4px 10px 4px 6px;border-radius:999px;background:rgba(23,13,18,0.88);border:1px solid ${V.brass};color:${V.ivory};font:600 11px ${VF.ui};white-space:nowrap;cursor:pointer;box-shadow:0 0 ${live ? 18 : 8}px ${V.brass}${live ? '88' : '44'};${live ? 'animation:roomGlow 2s infinite;' : ''}`
+      const moon = document.createElement('span'); moon.textContent = '🌙'
+      const txt = document.createElement('span'); txt.textContent = n.title.length > 22 ? n.title.slice(0, 21) + '…' : n.title
+      const when = document.createElement('span'); when.textContent = live ? 'LIVE' : nightWhen(n).split(' · ')[0]
+      when.style.cssText = `color:${live ? V.brassUp : V.smoke};letter-spacing:.08em;font-size:10px;`
+      el.append(moon, txt, when)
+      el.addEventListener('click', e => { e.stopPropagation(); onOpenNight?.(n) })
+      nightMarkersRef.current.push(new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -42 - k * 28] }).setLngLat([n.lng, n.lat]).addTo(mapRef.current!))
+    })
+  }, [nights, mapReady, onOpenNight])
 
   // ── Fallback: no WebGL or map kept failing → CSS canvas map ──────────────
   if (mapFailed) {
@@ -1686,6 +1729,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
           <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, transform: 'translate(-50%,-50%)', width: 120, height: 120, borderRadius: '50%', border: `1px solid ${isGhost ? C.ghost + '20' : C.accent + '30'}`, pointerEvents: 'none', zIndex: 5 }} />
           <div style={{ position: 'absolute', left: `${myPos.x}%`, top: `${myPos.y}%`, transform: 'translate(-50%,-50%)', width: 200, height: 200, borderRadius: '50%', border: `1px solid ${isGhost ? C.ghost + '10' : C.accent + '15'}`, pointerEvents: 'none', zIndex: 5 }} />
           <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', border: `1px solid ${C.border2}`, borderRadius: 20, padding: '5px 12px', fontSize: 11, color: C.green, fontFamily: FONT, zIndex: 30 }}>● {presenceLabel(onlineCount)}</div>
+          {emptyOverlay}
           {!isGhost && <button onClick={onCreatePulseRoom} style={{ position: 'absolute', bottom: 'calc(76px + env(safe-area-inset-bottom))', right: 14, background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`, border: 'none', borderRadius: 16, padding: '10px 16px', color: '#fff', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, boxShadow: `0 4px 20px ${C.accent}44`, zIndex: 30 }}><span style={{ fontSize: 16 }}>📡</span> Start Pulse Room</button>}
         </div>
       </div>
@@ -1757,6 +1801,8 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
         )}
       </div>
 
+      {!pickingSpot && emptyOverlay}
+
       {/* Create Pulse Room FAB */}
       {!isGhost && !pickingSpot && (
         <button onClick={onCreatePulseRoom} style={{ position: 'absolute', bottom: 'calc(76px + env(safe-area-inset-bottom))', right: 14, background: `linear-gradient(135deg, ${C.accent}, ${C.purple})`, border: 'none', borderRadius: 16, padding: '10px 16px', color: '#fff', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, boxShadow: `0 4px 20px ${C.accent}44`, zIndex: 30 }}>
@@ -1779,7 +1825,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
           </div>
         </>
       )}
-      {openSpot && <SpotSheet key={openSpot.id} spot={openSpot} theme={ST} onClose={() => setOpenSpot(null)} onChanged={loadSpots} />}
+      {openSpot && <SpotSheet key={openSpot.id} spot={openSpot} theme={ST} onClose={() => setOpenSpot(null)} onChanged={loadSpots} extra={spotExtra?.(openSpot, () => setOpenSpot(null))} />}
       {addSpotAt && <AddSpotSheet at={addSpotAt} theme={ST} onClose={() => setAddSpotAt(null)}
         onAdded={() => { setAddSpotAt(null); showError('📍 Spot sent for review — only you can see it for now'); loadSpots() }} />}
 
@@ -2256,6 +2302,34 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
 }
 
 // ─── Account Upgrade Banner ────────────────────────────────────────────────────
+// ─── Finish-profile nudge ─────────────────────────────────────────────────────
+// Onboarding only asks name + age, so the rest of the profile is requested here, once the person
+// has seen the map. Hidden for good once there's a photo and the eat-role survey, or after "Later" ×2.
+const FINISH_KEY = 'he_finish_nudge'
+function FinishProfileNudge({ profile, onOpen }: { profile: Partial<Pick<Profile, 'photo_url' | 'details'>>; onOpen: () => void }) {
+  const incomplete = !profile.photo_url || !profile.details?.eat_role
+  const [state, setState] = useState(() => { try { return JSON.parse(localStorage.getItem(FINISH_KEY) || '{"later":0,"until":0}') as { later: number; until: number } } catch { return { later: 0, until: 0 } } })
+  const [show, setShow] = useState(false)
+  useEffect(() => {
+    if (!incomplete || state.later >= 2 || state.until > Date.now()) return
+    const t = setTimeout(() => setShow(true), 20_000) // let them look around first
+    return () => clearTimeout(t)
+  }, [incomplete, state])
+  if (!show || !incomplete) return null
+  const later = () => {
+    const next = { later: state.later + 1, until: Date.now() + 2 * 86_400_000 }
+    try { localStorage.setItem(FINISH_KEY, JSON.stringify(next)) } catch { /* private mode */ }
+    setState(next); setShow(false)
+  }
+  return (
+    <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: V.velvet2, borderBottom: `1px solid ${V.hairline}`, fontSize: 12, color: V.ivory, flexShrink: 0, fontFamily: VF.ui }}>
+      <span style={{ flex: 1, lineHeight: 1.4 }}>{profile.photo_url ? 'Add your stats so guys know what you’re into.' : 'Add a photo so guys know who’s looking.'}</span>
+      <button onClick={() => { setShow(false); onOpen() }} style={{ minHeight: 32, padding: '6px 12px', borderRadius: 2, background: V.ember, color: '#fff', fontWeight: 700, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Finish profile</button>
+      <button aria-label="Later" onClick={later} style={{ minWidth: 32, minHeight: 32, color: V.smoke, fontSize: 16 }}>✕</button>
+    </div>
+  )
+}
+
 function UpgradeBanner({ isAnon }: { isAnon: boolean }) {
   const [show, setShow] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -3081,37 +3155,10 @@ export default function App() {
     return startPresence(!isGhost)
   }, [user, isGhost])
 
-  // ── Pulse Rooms (localStorage-backed, ephemeral) ──
-  const [pulseRooms, setPulseRooms] = useState<PulseRoom[]>(() => {
-    try {
-      const saved = localStorage.getItem('he_pulse_rooms')
-      if (saved) {
-        const rooms: PulseRoom[] = JSON.parse(saved)
-        return rooms.filter(r => Date.now() < r.expiresAt)
-      }
-    } catch {}
-    return []
-  })
-  const [activePulseRoom, setActivePulseRoom] = useState<PulseRoom | null>(null)
-
-  const savePulseRooms = (rooms: PulseRoom[]) => {
-    const live = rooms.filter(r => Date.now() < r.expiresAt)
-    localStorage.setItem('he_pulse_rooms', JSON.stringify(live))
-    setPulseRooms(live)
-  }
-
-  // Purge expired rooms every 30s
-  useEffect(() => {
-    const id = setInterval(() => {
-      setPulseRooms(prev => {
-        const live = prev.filter(r => Date.now() < r.expiresAt)
-        if (live.length !== prev.length) localStorage.setItem('he_pulse_rooms', JSON.stringify(live))
-        return live
-      })
-      if (activePulseRoom && Date.now() > activePulseRoom.expiresAt) setActivePulseRoom(null)
-    }, 30000)
-    return () => clearInterval(id)
-  }, [activePulseRoom])
+  // ── Pulse Rooms (shared: stored in Supabase, visible to every signed-in session) ──
+  const pulse = usePulseRooms(user?.id ?? null, myProfile, showError)
+  const pulseRooms = pulse.rooms
+  const activePulseRoom = pulse.active
 
   const [showPulseCreate, setShowPulseCreate] = useState(false)
 
@@ -3120,52 +3167,20 @@ export default function App() {
     setShowPulseCreate(true)
   }
 
-  const handleConfirmCreateRoom = (name: string, color: string) => {
-    const newRoom: PulseRoom = {
-      id: `room_${Date.now()}`,
-      name,
-      creatorId: user?.id ?? 'anon',
-      creatorName: myProfile?.name ?? 'Anonymous',
-      memberIds: [user?.id ?? 'anon'],
-      messages: [],
-      expiresAt: Date.now() + PULSE_TTL,
-      pulseColor: color,
-    }
-    const updated = [...pulseRooms, newRoom]
-    savePulseRooms(updated)
-    setActivePulseRoom(newRoom)
-    setShowPulseCreate(false)
+  const handleConfirmCreateRoom = async (name: string, color: string) => {
+    if (await pulse.create(name, color)) setShowPulseCreate(false)
   }
+  const handleOpenPulseRoom = pulse.open
+  const handlePulseSend = (text: string) => { void pulse.send(text) }
 
-  const handleOpenPulseRoom = (id: string) => {
-    const room = pulseRooms.find(r => r.id === id)
-    if (room) {
-      // Add self as member
-      if (!room.memberIds.includes(user?.id ?? 'anon')) {
-        const updated = pulseRooms.map(r => r.id === id ? { ...r, memberIds: [...r.memberIds, user?.id ?? 'anon'] } : r)
-        savePulseRooms(updated)
-        setActivePulseRoom({ ...room, memberIds: [...room.memberIds, user?.id ?? 'anon'] })
-      } else {
-        setActivePulseRoom(room)
-      }
-    }
-  }
-
-  const handlePulseSend = (text: string) => {
-    if (!activePulseRoom || !myProfile) return
-    const msg: PulseMsg = {
-      id: `msg_${Date.now()}`,
-      senderId: user?.id ?? 'anon',
-      senderName: myProfile.name ?? 'Anonymous',
-      senderEmoji: myProfile.emoji ?? '🔥',
-      senderColor: myProfile.color ?? C.accent,
-      content: text,
-      ts: Date.now(),
-    }
-    const updated = pulseRooms.map(r => r.id === activePulseRoom.id ? { ...r, messages: [...r.messages, msg] } : r)
-    savePulseRooms(updated)
-    setActivePulseRoom(prev => prev ? { ...prev, messages: [...prev.messages, msg] } : prev)
-  }
+  // ── Empty map: nights at spots nearby, and the "It's early here" card ──
+  const nightsApi = useNights(gpsCoords, !!user)
+  const [openNightId, setOpenNightId] = useState<string | null>(null)
+  const openNight = nightsApi.nights.find(n => n.id === openNightId) ?? null
+  const handleOpenNight = useCallback((n: Night) => setOpenNightId(n.id), [])
+  const nightCb: Omit<NightCallbacks, 'onOpenRoom'> = { pushOn: pushState === 'on', onEnablePush: () => void enablePush(), onPatch: nightsApi.patch }
+  // "Empty" = nobody nearby is online right now (stale pins don't count), once location and the first fetch are done
+  const mapIsEmpty = locStatus === 'ok' && !nearbyLoading && !visibleNearby.some(u => u.online)
 
   useEffect(() => {
     const min = setTimeout(() => setSplashMinDone(true), 1600)
@@ -3295,21 +3310,26 @@ export default function App() {
 
     if (!navigator.geolocation) { setLocStatus('unavailable'); setNearby([]); setNearbyLoading(false); return }
 
-    // Initial position. code 1 = the person (or the OS) blocked location → show how to fix it
-    navigator.geolocation.getCurrentPosition(handlePosition, (err) => {
-      setLocStatus(err.code === 1 ? 'denied' : (s => s === 'ok' ? s : 'unavailable'))
-      setNearby([]); setNearbyLoading(false)
-    }, { enableHighAccuracy: true, timeout: 20000 })
+    // "Not now" at onboarding: don't fire the OS prompt until they turn location on (LocationBlockedBanner).
+    const deferred = locationDeferred()
+    if (deferred) { setLocStatus('off'); setNearby([]); setNearbyLoading(false) }
+    else {
+      // Initial position. code 1 = the person (or the OS) blocked location → show how to fix it
+      navigator.geolocation.getCurrentPosition(handlePosition, (err) => {
+        setLocStatus(err.code === 1 ? 'denied' : (s => s === 'ok' ? s : 'unavailable'))
+        setNearby([]); setNearbyLoading(false)
+      }, { enableHighAccuracy: true, timeout: 20000 })
+    }
 
     // Watch for movement — re-fetch nearby every position update
-    const watchId = navigator.geolocation.watchPosition(handlePosition, (err) => { if (err.code === 1) setLocStatus('denied') }, {
+    const watchId = deferred ? null : navigator.geolocation.watchPosition(handlePosition, (err) => { if (err.code === 1) setLocStatus('denied') }, {
       enableHighAccuracy: true, maximumAge: 30000, timeout: 10000,
     })
     // Chrome/Firefox tell us when it's switched back on in settings; Safari needs the Try again button
     const stopPermWatch = watchLocationPermission(state => { if (state === 'granted') setLocRetry(n => n + 1) })
     // While Live, ask for a fresh fix on a timer too (watchPosition only fires on movement)
     const liveTick = setInterval(() => {
-      if (liveRef.current && document.visibilityState === 'visible') navigator.geolocation.getCurrentPosition(handlePosition, () => {}, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 })
+      if (!deferred && liveRef.current && document.visibilityState === 'visible') navigator.geolocation.getCurrentPosition(handlePosition, () => {}, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 })
     }, LIVE_SYNC_MS)
 
     // Online = heartbeat while visible. Unmount cleanup alone never runs when a tab is closed or a
@@ -3324,7 +3344,7 @@ export default function App() {
     const heartbeat = setInterval(markOnline, 60_000)
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
-      navigator.geolocation.clearWatch(watchId)
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId)
       stopPermWatch()
       clearInterval(liveTick)
       clearInterval(heartbeat)
@@ -3344,6 +3364,7 @@ export default function App() {
   const toggleLive = () => {
     if (liveEndsAt !== null) { setLiveEndsAt(null); return }
     if (locStatus === 'denied') { showError('Turn location on first — tap Fix it at the top'); return }
+    if (locStatus === 'off') { clearLocationDeferred(); setLocRetry(n => n + 1); return } // tap is the opt-in; Live starts once it's on
     setLiveEndsAt(Date.now() + LIVE_MAX_MS)
     setLocRetry(n => n + 1) // fresh fix right away
   }
@@ -3485,15 +3506,25 @@ export default function App() {
 
       {/* Ghost banner */}
       {isGhost && <GhostBanner onDisable={() => setIsGhost(false)} />}
-      {(locStatus === 'denied' || locStatus === 'unavailable') && (screen === 'map' || screen === 'list') && (
-        <LocationBlockedBanner theme={LT} status={locStatus} onRetry={() => setLocRetry(n => n + 1)} />
+      {(locStatus === 'denied' || locStatus === 'unavailable' || locStatus === 'off') && (screen === 'map' || screen === 'list') && (
+        <LocationBlockedBanner theme={LT} status={locStatus} onRetry={() => { clearLocationDeferred(); setLocRetry(n => n + 1) }} />
       )}
+      {screen === 'map' && myProfile && <FinishProfileNudge profile={myProfile} onOpen={() => setEditingProfile(true)} />}
 
       {/* Main */}
-      <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' || screen === 'videos' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, paddingBottom: screen === 'map' || screen === 'videos' ? 0 : `calc(${TAB_H}px + env(safe-area-inset-bottom))` }}>
+      <main id="main-content" aria-label="App content" aria-live="polite" style={{ flex: 1, overflow: screen === 'map' || screen === 'videos' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, paddingBottom: screen === 'map' ? 0 : `calc(${TAB_H}px + env(safe-area-inset-bottom))` }}>
         {screen === 'map' && (
           <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} gpsCoords={gpsCoords} isPremium={IS_PREMIUM} />
+            <MapScreen myProfile={{ ...myProfile, cruising_status: cruisingStatus }} nearby={visibleNearby} myPos={myPos} onMovePin={handleMovePin} onSelectUser={setSelectedUser} isGhost={isGhost} onOpenPulseRoom={handleOpenPulseRoom} pulseRooms={pulseRooms} onCreatePulseRoom={handleCreatePulseRoom} gpsCoords={gpsCoords} isPremium={IS_PREMIUM}
+              nights={nightsApi.nights} onOpenNight={handleOpenNight}
+              emptyOverlay={mapIsEmpty && (
+                <EmptyMapCard coords={gpsCoords} nights={nightsApi.nights} pushState={pushState} onEnablePush={enablePush}
+                  onInstall={() => setShowInstall(true)} onOpenNight={handleOpenNight} />
+              )}
+              spotExtra={(spot, close) => (
+                <SpotNights spot={spot} nights={nightsApi.nights} theme={ST} isAdmin={isAdmin} onChanged={() => void nightsApi.refresh()}
+                  cb={{ ...nightCb, onOpenRoom: id => { close(); handleOpenPulseRoom(id) } }} />
+              )} />
             <GoLiveButton theme={LT} live={liveEndsAt !== null} endsAt={liveEndsAt} onToggle={toggleLive} />
           </div>
         )}
@@ -3582,11 +3613,11 @@ export default function App() {
           <MatchesScreen userId={user.id} onOpenProfile={(p) => setSelectedUser(p)} onOpenChat={(match, other) => setActiveMatch({ match, other })} onClearUnread={(id) => setUnreadCounts(prev => { const n = {...prev}; delete n[id]; return n })} />
         )}
         {screen === 'videos' && (needsAccount
-          ? <AccountGate theme={VT} title="Videos are for members" body="Create a free account to watch and post videos." onCreate={() => setShowAuth(true)} />
+          ? <AccountGate theme={VT} title="Videos are members-only." body="Add an email to watch and post videos. Still free, still discreet." onCreate={() => setShowAuth(true)} />
           : <VideoFeed theme={VT} canPost={!!user} />
         )}
         {screen === 'global' && (needsAccount
-          ? <AccountGate theme={VT} title="Whore-izon is for members" body="Create a free account to read and post in the open chat." onCreate={() => setShowAuth(true)} />
+          ? <AccountGate theme={VT} title="Whore-izon is members-only." body="Add an email to read and post in the open chat. Still free, still discreet." onCreate={() => setShowAuth(true)} />
           : <GlobalChat userId={user?.id ?? null} isGhost={isGhost} />
         )}
         {screen === 'profile' && (
@@ -3714,7 +3745,7 @@ export default function App() {
                 <div>
                   <div style={{ fontSize: 11, color: C.dim, marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Active Pulse Rooms</div>
                   {pulseRooms.filter(r => Date.now() < r.expiresAt).map(room => (
-                    <div key={room.id} onClick={() => { setActivePulseRoom(room); setScreen('map') }} style={{ padding: '12px 16px', borderRadius: 12, background: `${room.pulseColor}11`, border: `1px solid ${room.pulseColor}33`, marginBottom: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div key={room.id} onClick={() => { handleOpenPulseRoom(room.id); setScreen('map') }} style={{ padding: '12px 16px', borderRadius: 12, background: `${room.pulseColor}11`, border: `1px solid ${room.pulseColor}33`, marginBottom: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontSize: 16 }}>📡</span>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 700, fontSize: 13, color: room.pulseColor }}>{room.name}</div>
@@ -3846,9 +3877,15 @@ export default function App() {
         <PulseRoomCreateModal myProfile={myProfile} onConfirm={handleConfirmCreateRoom} onCancel={() => setShowPulseCreate(false)} />
       )}
 
+      {openNight && (
+        <NightSheet night={openNight} theme={ST} isAdmin={isAdmin} onClose={() => setOpenNightId(null)}
+          onRemoved={() => { setOpenNightId(null); void nightsApi.refresh() }}
+          cb={{ ...nightCb, onOpenRoom: id => { setOpenNightId(null); handleOpenPulseRoom(id); setScreen('map') } }} />
+      )}
+
       {/* Pulse Room overlay */}
       {activePulseRoom && Date.now() < activePulseRoom.expiresAt && myProfile && (
-        <PulseRoomOverlay room={activePulseRoom} myProfile={{ ...myProfile, id: user?.id ?? 'anon' }} onClose={() => setActivePulseRoom(null)} onSend={handlePulseSend} />
+        <PulseRoomOverlay room={activePulseRoom} myProfile={{ ...myProfile, id: user?.id ?? 'anon' }} onClose={() => pulse.close()} onSend={handlePulseSend} />
       )}
 
       {/* Error toasts */}

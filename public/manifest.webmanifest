@@ -1,14 +1,14 @@
 {
   "id": "/",
-  "name": "The Hole Eaters",
+  "name": "Hole Eaters",
   "short_name": "Hole Eaters",
   "description": "The live cruising map for guys, girls, trans and nonbinary folks. See who's near right now. 18+.",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "theme_color": "#000000",
-  "background_color": "#000000",
+  "theme_color": "#090608",
+  "background_color": "#090608",
   "icons": [
     {
       "src": "/icons/icon-192.png",

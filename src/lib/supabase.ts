@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { stripMetadata } from './stripMetadata'
+import { attributionMeta } from './attribution'
 import type { ProfileDetails } from './profileDetails'
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/supabasePublic'
@@ -58,12 +59,13 @@ export interface Message {
 }
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
+// Every account creation carries first-touch ad attribution into user_metadata (see lib/attribution).
 export async function signInAnon() {
-  return supabase.auth.signInAnonymously()
+  return supabase.auth.signInAnonymously({ options: { data: attributionMeta() } })
 }
 
 export async function signUp(email: string, password: string) {
-  return supabase.auth.signUp({ email, password })
+  return supabase.auth.signUp({ email, password, options: { data: attributionMeta() } })
 }
 
 export async function signIn(email: string, password: string) {
@@ -76,7 +78,7 @@ export async function signOut() {
 
 // ─── Email auth ──────────────────────────────────────────────────────────────
 export async function signUpEmail(email: string, password: string) {
-  return supabase.auth.signUp({ email, password })
+  return supabase.auth.signUp({ email, password, options: { data: attributionMeta() } })
 }
 
 export async function signInEmail(email: string, password: string) {
@@ -298,7 +300,7 @@ export async function signChatMedia(paths: string[]): Promise<Record<string, str
 export async function ensureUserId(): Promise<string | null> {
   const { data } = await supabase.auth.getSession()
   if (data.session?.user) return data.session.user.id
-  const { data: anon, error } = await supabase.auth.signInAnonymously()
+  const { data: anon, error } = await signInAnon()
   return error ? null : anon.user?.id ?? null
 }
 

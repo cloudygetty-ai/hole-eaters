@@ -1,4 +1,5 @@
 import { initGate } from './gate'
+import { captureAttribution, isInAppBrowser } from '../lib/attribution'
 import { logPromoVisit } from '../lib/promo'
 
 // Landing "Put it on your Home Screen" section: show the steps for the visitor's phone.
@@ -28,5 +29,23 @@ if (new URLSearchParams(location.search).has('deleted')) {
   if (note) { note.hidden = false; note.scrollIntoView({ block: 'center' }) }
 }
 
+// Ad clicks often open inside Instagram/TikTok/Grindr's own browser, where Add to Home Screen and
+// push don't exist. Say so up front and make the link one tap to copy.
+if (isInAppBrowser() && !standalone) {
+  const bar = document.getElementById('gate-inapp')
+  const copy = document.getElementById('gate-inapp-copy')
+  const name = document.getElementById('gate-inapp-browser')
+  if (bar && copy) {
+    if (name && isAndroid) name.textContent = 'Chrome'
+    bar.hidden = false
+    copy.addEventListener('click', async () => {
+      const url = location.origin + location.pathname + location.search
+      try { await navigator.clipboard.writeText(url); copy.textContent = 'Copied' }
+      catch { window.prompt('Copy this link, then open it in your browser:', url) }
+    })
+  }
+}
+
+captureAttribution()
 initGate()
 logPromoVisit()

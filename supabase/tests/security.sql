@@ -81,6 +81,16 @@ begin
   select (convert_from(q.body, 'utf8'))::jsonb->>'title' = 'Hole Eaters' into ok from net.http_request_queue q order by q.id desc limit 1;
   perform pg_temp.check(coalesce(ok, false), 'lock screen discreet by default');
 
+  -- ── Empty map: watches and nights ──
+  perform pg_temp.check(not has_table_privilege('authenticated', 'public.map_watches', 'select'), 'map watches are not readable by members');
+  perform pg_temp.check(not has_table_privilege('authenticated', 'public.night_rsvps', 'select'), 'who is going to a night stays private');
+  perform pg_temp.check(not has_function_privilege('authenticated', 'public.run_map_jobs()', 'execute'), 'members cannot run the map jobs');
+  perform pg_temp.check(not has_function_privilege('anon', 'public.upcoming_nights(double precision, double precision, integer)', 'execute'), 'signed-out visitors cannot list nights');
+  perform pg_temp.as_user(a);
+  begin perform add_night((select id from spots limit 1), 'Test night', now() + interval '1 day', now() + interval '1 day 3 hours'); perform pg_temp.check(false, 'a member added a night');
+  exception when insufficient_privilege then perform pg_temp.check(true, 'only admins add nights'); end;
+  perform pg_temp.as_admin_db();
+
   -- ── Spam limits ──
   perform pg_temp.as_user(a);
   begin for n in 1..35 loop insert into messages(match_id, sender_id, content, enc) values (mab, a, '', '{"v":1,"sd":"x","iv":"x","ct":"x","k":{}}'); end loop;
