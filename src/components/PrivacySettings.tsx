@@ -101,6 +101,7 @@ export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, onCh
         <div style={{ display: 'flex', justifyContent: 'center', gap: 18, fontSize: 13 }}>
           <a href="/privacy" target="_blank" rel="noopener" style={{ color: t.muted }}>Privacy Policy</a>
           <a href="/terms" target="_blank" rel="noopener" style={{ color: t.muted }}>Terms</a>
+          <a href="/safety" target="_blank" rel="noopener" style={{ color: t.muted }}>Safety</a>
           <a href="/privacy#contact" target="_blank" rel="noopener" style={{ color: t.muted }}>Contact</a>
         </div>
         <button onClick={() => setDeleteSheet(true)} style={{ padding: 14, borderRadius: 14, background: 'transparent', border: '1px solid #ef444466', color: '#ef4444', fontWeight: 700, fontSize: 14 }}>

@@ -24,6 +24,10 @@
     {
       "source": "/2257",
       "destination": "/2257.html"
+    },
+    {
+      "source": "/safety",
+      "destination": "/safety.html"
     }
   ],
   "headers": [
