@@ -33,6 +33,9 @@ export interface Profile {
   tz?: string | null
   notify_previews?: boolean // lock-screen alerts show names/previews; off = "You have new activity"
   anthem_url?: string | null // outbound music link card; validated by profiles_anthem_safe
+  // Invite rewards, merged in client-side from invite_perks_for (not profile columns)
+  spotlight?: boolean
+  founder?: boolean
 }
 
 export interface Match {

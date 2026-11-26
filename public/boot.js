@@ -5,8 +5,8 @@
     var l = location, q = new URLSearchParams(l.search)
     var ref = q.get('ref')
     if (ref && /^[a-z0-9_-]{4,24}$/i.test(ref)) localStorage.setItem('he_ref', ref.toLowerCase())
-    var utm = q.get('utm_source')
-    if (utm) localStorage.setItem('he_src', utm.replace(/[^a-z0-9_.-]/gi, '').slice(0, 64))
+    var utm = q.get('src') || q.get('utm_source')
+    if (utm && /^[a-z0-9_.-]{1,40}$/i.test(utm)) localStorage.setItem('he_src', utm.toLowerCase())
     if (q.has('home')) return
     var standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
     var authCallback = /access_token|refresh_token|type=recovery|error_description/.test(l.hash) || q.has('code')
