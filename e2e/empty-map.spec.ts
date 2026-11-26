@@ -34,8 +34,13 @@ function seed({ admin = false } = {}) {
 test('empty map: invite progress, ping me when someone shows up, and nights with their rooms', async ({ browser }) => {
   const { b, watches } = seed()
   const { context, page, problems } = await openAs(browser, b, ME, { stubMap: true })
-  // Notifications on, so the switch can turn on without a browser prompt
-  await context.grantPermissions(['notifications'])
+  // Notifications already on, so the switch turns on without a browser prompt.
+  // Headless test browsers differ on web push support, so act as a phone that has it.
+  await context.addInitScript(() => {
+    if (!('PushManager' in window)) Object.defineProperty(window, 'PushManager', { value: class PushManager {}, configurable: true })
+    if (!('Notification' in window)) Object.defineProperty(window, 'Notification', { value: class Notification { static requestPermission = async () => 'granted' }, configurable: true })
+    Object.defineProperty(Notification, 'permission', { get: () => 'granted', configurable: true })
+  })
   await page.reload()
 
   // Folded by default in tests; unfold it
