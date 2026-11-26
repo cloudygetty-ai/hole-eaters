@@ -19,7 +19,7 @@ const DECK: Deck = {
     truth: [
       "What made you open my profile?",
       "What's your go-to first-date move?",
-      "Best compliment you've ever gotten from a guy?",
+      "Best compliment you've ever gotten from a hookup?",
       "What song is stuck in your head right now?",
       "What's the most spontaneous thing you've done this year?",
       "What's a green flag that gets you every time?",
@@ -41,7 +41,7 @@ const DECK: Deck = {
   },
   spicy: {
     truth: [
-      "What's the first thing you notice on a guy?",
+      "What's the first thing you notice about someone?",
       "What's your biggest turn-on that most people wouldn't guess?",
       "Top, bottom or vers — and what's your favorite part of it?",
       "What's the hottest message you've ever received?",
