@@ -1,16 +1,13 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import * as maplibregl from "maplibre-gl";
+import type * as maplibregl from "maplibre-gl";
 import { SpotSheet, AddSpotSheet, SpotsReviewQueue, type SpotsTheme } from './components/Spots'
 import { spotMarkerEl } from './lib/spotMarker'
 import { MediaImg, MediaVideo } from './components/Media'
 import { LocationBlockedBanner, GoLiveButton, type LiveTheme } from './components/LiveAndLocation'
 import { holdWakeLock, watchLocationPermission, LIVE_MAX_MS, LIVE_SYNC_MS, NORMAL_SYNC_MS, type LocStatus } from './lib/goLive'
 import { getSpots, requestVenues, shouldRequestVenues, type Spot } from './lib/spots'
-// v6 loads its tile worker from a separate file; let Vite bundle it and point MapLibre at it
-import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
-maplibregl.setWorkerUrl(mapWorkerUrl);
+import { loadMapLib, type MapLib } from './lib/mapLib'
 import { ArrowUp, ChevronDown, Video, VideoOff } from 'lucide-react'
-import "maplibre-gl/dist/maplibre-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
 import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, getMyPrivate, savePrivacy, saveTimezone, getResponsiveness, getChatPrefs, type Privacy, ensureUserId, signChatMedia, blockUser, getBlockedIds, postGlobalMessage, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
 import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
@@ -851,7 +848,7 @@ const DRIPS = [{ x: 18, h: 44 }, { x: 34, h: 26 }, { x: 50, h: 38 }, { x: 66, h:
 
 function Splash() {
   return (
-    <div className="he-splash" role="status" aria-label="Loading The Hole Eaters" style={{ position: 'fixed', inset: 0, background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+    <div className="he-splash" role="status" aria-label="Loading Hole Eaters" style={{ position: 'fixed', inset: 0, background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
       <style>{SPLASH_CSS}</style>
       <div style={{ position: 'relative', width: 240 }}>
         {/* Glow sits behind the image: a filter on the image itself would outline its black square */}
@@ -920,7 +917,7 @@ function Onboarding({ onComplete, onSignIn }: { onComplete: (p: Partial<Profile>
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: 'max(24px, env(safe-area-inset-top)) 24px 24px' }}>
       <style>{GCSS}</style>
       <div style={{ width: '100%', maxWidth: 400, marginTop: 24 }}>
-        {step === 0 && <img src="/brand/logo.webp" alt="The Hole Eaters" width={160} style={{ display: 'block', margin: '0 auto 24px', height: 'auto', mixBlendMode: 'lighten' }} />}
+        {step === 0 && <img src="/brand/logo.webp" alt="Hole Eaters" width={160} style={{ display: 'block', margin: '0 auto 24px', height: 'auto', mixBlendMode: 'lighten' }} />}
         <div style={{ display: 'flex', gap: 6, marginBottom: 32 }}>{steps.map((_, i) => (<div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= step ? C.accent : C.surf3, transition: 'background 0.3s' }} />))}</div>
         <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 24 }}>{steps[step].title}</div>
         {steps[step].content}
@@ -1333,6 +1330,8 @@ function GhostBanner({ onDisable }: { onDisable: () => void }) {
 const MAP_STYLE_URL = (import.meta.env.VITE_MAP_STYLE_URL as string | undefined) || 'https://tiles.openfreemap.org/styles/dark'
 const MAX_MAP_TRIES = 4
 const MAP_LOAD_TIMEOUT_MS = 15000
+// Start fetching the map library while the splash screen is up, so it's ready when the map opens.
+loadMapLib().catch(() => { /* MapScreen asks again and falls back to the grid if it still fails */ })
 
 function hasWebGL(): boolean {
   try {
@@ -1381,6 +1380,8 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   const pulseMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const spotMarkersRef = useRef<maplibregl.Marker[]>([])
   const [mapReady, setMapReady] = useState(false)
+  // MapLibre arrives in its own chunk (see lib/mapLib); null until it has loaded
+  const [ml, setMl] = useState<MapLib | null>(null)
   // Cruising spots layer
   const [spots, setSpots] = useState<Spot[]>([])
   const [showSpots, setShowSpots] = useState(() => { try { return localStorage.getItem('he_show_spots') !== '0' } catch { return true } })
@@ -1412,12 +1413,23 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   const hasCenteredRef = useRef(false)
   const [following, setFollowing] = useState(true)
 
+  // ── Load MapLibre ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (ml || mapFailed) return
+    let live = true
+    loadMapLib().then(
+      lib => { if (live) setMl(() => lib) },
+      err => { console.warn('[map] library failed to load', err); if (live) setMapFailed(true) },
+    )
+    return () => { live = false }
+  }, [ml, mapFailed])
+
   // ── Init Mapbox map ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapContainerRef.current || mapFailed || mapRef.current) return
+    if (!ml || !mapContainerRef.current || mapFailed || mapRef.current) return
     let map: maplibregl.Map
     try {
-      map = new maplibregl.Map({
+      map = new ml.Map({
       container: mapContainerRef.current,
       style: MAP_STYLE_URL,
       center: [baseLng, baseLat],
@@ -1451,7 +1463,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       setBuildings3d(map, streetModeRef.current)
       setMapReady(true)
     })
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
+    map.addControl(new ml.NavigationControl({ showCompass: false }), 'top-left')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const stopFollowing = (e: any) => {
       if (e.originalEvent) { followRef.current = false; setFollowing(false) }
@@ -1474,7 +1486,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       map.remove()
       mapRef.current = null
     }
-  }, [mapFailed, mapEpoch])
+  }, [ml, mapFailed, mapEpoch])
 
   // ── Follow GPS ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1536,10 +1548,10 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
   useEffect(() => {
     spotMarkersRef.current.forEach(m => m.remove())
     spotMarkersRef.current = []
-    if (!mapRef.current || !mapReady || !showSpots) return
+    if (!ml || !mapRef.current || !mapReady || !showSpots) return
     spotMarkersRef.current = spots.map(s =>
-      new maplibregl.Marker({ element: spotMarkerEl(s, () => setOpenSpot(s)) }).setLngLat([s.lng, s.lat]).addTo(mapRef.current!))
-  }, [spots, showSpots, mapReady])
+      new ml.Marker({ element: spotMarkerEl(s, () => setOpenSpot(s)) }).setLngLat([s.lng, s.lat]).addTo(mapRef.current!))
+  }, [ml, spots, showSpots, mapReady])
 
   const toggleSpots = () => setShowSpots(v => {
     try { localStorage.setItem('he_show_spots', v ? '0' : '1') } catch { /* noop */ }
@@ -1554,18 +1566,18 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
 
   // ── My pin marker ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapRef.current || !mapReady) return
+    if (!ml || !mapRef.current || !mapReady) return
     myMarkerRef.current?.remove()
     const el = document.createElement('div')
     el.style.cssText = `width:48px;height:48px;border-radius:50%;background:${isGhost ? 'rgba(100,255,218,0.08)' : `linear-gradient(135deg,${myProfile.color ?? C.accent}88,${myProfile.color ?? C.accent}22)`};border:2.5px solid ${isGhost ? C.ghost : myProfile.color ?? C.accent};display:flex;align-items:center;justify-content:center;font-size:22px;cursor:grab;box-shadow:0 0 16px ${isGhost ? C.ghost : myProfile.color ?? C.accent}44;z-index:100;transition:box-shadow .3s`
     el.textContent = isGhost ? '👻' : (myProfile.emoji ?? '🔥')
     el.title = myProfile.name ?? 'You'
-    const marker = new maplibregl.Marker({ element: el, draggable: false })
+    const marker = new ml.Marker({ element: el, draggable: false })
       .setLngLat([baseLng, baseLat])
       .addTo(mapRef.current)
     myMarkerRef.current = marker
     return () => { marker.remove(); myMarkerRef.current = null }
-  }, [myProfile.emoji, myProfile.color, myProfile.name, isGhost, mapReady])
+  }, [ml, myProfile.emoji, myProfile.color, myProfile.name, isGhost, mapReady])
 
   // Move (don't rebuild) my pin as GPS updates
   useEffect(() => {
@@ -1574,7 +1586,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
 
   // ── Nearby user markers ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapRef.current || !mapReady) return
+    if (!ml || !mapRef.current || !mapReady) return
     nearbyMarkersRef.current.forEach(m => m.remove())
     nearbyMarkersRef.current.clear()
     // Locations are rounded server-side (~100 m), so several people can share one point; fan them out
@@ -1603,14 +1615,14 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       label.textContent = u.name
       el.appendChild(avatar); el.appendChild(label)
       el.addEventListener('click', () => onSelectUser(u))
-      const marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
+      const marker = new ml.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
       nearbyMarkersRef.current.set(u.id, marker)
     })
-  }, [nearby, anchorLat, anchorLng, mapReady])
+  }, [ml, nearby, anchorLat, anchorLng, mapReady])
 
   // ── Pulse Room beacon markers ────────────────────────────────────────────
   useEffect(() => {
-    if (!mapRef.current || !mapReady) return
+    if (!ml || !mapRef.current || !mapReady) return
     pulseMarkersRef.current.forEach(m => m.remove())
     pulseMarkersRef.current.clear()
     pulseRooms.filter(r => Date.now() < r.expiresAt).forEach((room, i) => {
@@ -1630,10 +1642,10 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
       sub.textContent = `${room.memberIds.length} inside`
       el.appendChild(beacon); el.appendChild(lbl); el.appendChild(sub)
       el.addEventListener('click', () => onOpenPulseRoom(room.id))
-      const marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
+      const marker = new ml.Marker({ element: el }).setLngLat([lng, lat]).addTo(mapRef.current!)
       pulseMarkersRef.current.set(room.id, marker)
     })
-  }, [pulseRooms, anchorLat, anchorLng, mapReady])
+  }, [ml, pulseRooms, anchorLat, anchorLng, mapReady])
 
   // ── Fallback: no WebGL or map kept failing → CSS canvas map ──────────────
   if (mapFailed) {
@@ -2200,7 +2212,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
       <style>{GCSS}</style>
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ textAlign: 'center', marginBottom: 36 }}>
-          <img src="/brand/logo.webp" alt="The Hole Eaters" width={220} style={{ display: 'block', margin: '0 auto 8px', height: 'auto', mixBlendMode: 'lighten' }} />
+          <img src="/brand/logo.webp" alt="Hole Eaters" width={220} style={{ display: 'block', margin: '0 auto 8px', height: 'auto', mixBlendMode: 'lighten' }} />
           <div style={{ color: C.dim, fontSize: 13, marginTop: 6 }}>{mode === 'signin' ? 'Sign in to your account' : 'Create your account'}</div>
         </div>
 
@@ -2622,7 +2634,7 @@ function VersionScreen({ onClose }: { onClose: () => void }) {
       <div style={{ position: 'relative', background: C.surf2, borderRadius: '22px 22px 0 0', maxHeight: '80vh', overflow: 'auto', animation: 'slideUp 0.25s ease', padding: '20px 20px 40px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 18 }}>The Hole Eaters</div>
+            <div style={{ fontWeight: 800, fontSize: 18 }}>Hole Eaters</div>
             <div style={{ fontSize: 12, color: C.dim, fontFamily: FONT }}>v{APP_VERSION}</div>
           </div>
           <button onClick={onClose} style={{ color: C.dim, fontSize: 18 }}>✕</button>
@@ -3441,7 +3453,7 @@ export default function App() {
       <header role="banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0, zIndex: 200 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <img src="/brand/emblem.webp" alt="" width={28} height={28} style={{ mixBlendMode: 'lighten' }} />
-          <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: 1 }}>THE HOLE EATERS</div>
+          <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: 1 }}>HOLE EATERS</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Ghost Mode Toggle */}

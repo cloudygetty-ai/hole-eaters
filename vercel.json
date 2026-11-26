@@ -6,6 +6,14 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/apple-touch-icon.png",
+      "destination": "/icons/apple-touch-icon.png"
+    },
+    {
+      "source": "/apple-touch-icon-precomposed.png",
+      "destination": "/icons/apple-touch-icon.png"
+    },
+    {
       "source": "/app",
       "destination": "/app.html"
     },

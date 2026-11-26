@@ -1,4 +1,4 @@
-# The Hole Eaters
+# Hole Eaters
 
 Location-based proximity app. PWA.
 

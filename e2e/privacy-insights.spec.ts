@@ -115,7 +115,7 @@ test('privacy, terms and contact pages are linked and readable', async ({ browse
   await page.getByRole('link', { name: 'Privacy', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Privacy Policy' })).toBeVisible()
   await expect(page.getByText('ANL LLC').first()).toBeVisible()
-  await expect(page.getByRole('link', { name: 'cloudygetty@gmail.com' }).first()).toHaveAttribute('href', 'mailto:cloudygetty@gmail.com')
+  await expect(page.getByRole('link', { name: 'support@hole-eaters.com' }).first()).toHaveAttribute('href', 'mailto:support@hole-eaters.com')
   await page.getByRole('link', { name: 'Terms' }).last().click()
   await expect(page.getByRole('heading', { name: 'Terms of Service' })).toBeVisible()
   expect(problems).toEqual([])
