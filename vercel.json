@@ -26,6 +26,33 @@
       "destination": "/2257.html"
     }
   ],
+  "redirects": [
+    {
+      "source": "/g",
+      "destination": "/?src=grindr-bio",
+      "permanent": false
+    },
+    {
+      "source": "/s",
+      "destination": "/?src=sniffies-bio",
+      "permanent": false
+    },
+    {
+      "source": "/chat",
+      "destination": "/?src=group-chat",
+      "permanent": false
+    },
+    {
+      "source": "/v/:slug([a-zA-Z0-9-]{1,30})",
+      "destination": "/?src=qr-:slug",
+      "permanent": false
+    },
+    {
+      "source": "/p/:slug([a-zA-Z0-9-]{1,30})",
+      "destination": "/?src=partner-:slug",
+      "permanent": false
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

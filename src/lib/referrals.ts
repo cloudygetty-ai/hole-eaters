@@ -1,4 +1,5 @@
-// Invite attribution. Contract: public.claim_referral(p_code) / public.my_invite_stats() in Supabase.
+// Invite attribution and rewards. Contract: public.claim_referral(p_code), public.my_invite_stats() and
+// public.invite_perks_for(p_ids) in supabase/migrations/20261126120000_invite_rewards.sql.
 import { supabase } from './supabase'
 import { storedSrc } from './promo'
 
@@ -8,10 +9,17 @@ export const SITE_URL = 'https://www.hole-eaters.com'
 export interface InviteStats {
   code: string
   invited: number
+  spotlight_until?: string | null // ISO; set while the Spotlight reward is running
+  founder?: boolean // Founding Eater badge, earned at founder_goal joins
+  founder_goal?: number
 }
 
-export function inviteUrl(code: string, source = 'invite') {
-  return `${SITE_URL}/?ref=${encodeURIComponent(code)}&utm_source=${source}`
+/** What other people see on a profile: never times or counts (see the migration's privacy note). */
+export interface InvitePerk { spotlight: boolean; founder: boolean }
+
+// src= feeds Admin › Promo sources (src/lib/promo.ts); ref= credits the inviter.
+export function inviteUrl(code: string, src = 'invite') {
+  return `${SITE_URL}/?ref=${encodeURIComponent(code)}&src=${src}`
 }
 
 // The landing page stores ?ref= before the app loads; read it here too for direct /app?ref= links.
@@ -35,6 +43,17 @@ export async function claimStoredReferral(): Promise<void> {
     return
   }
   try { localStorage.removeItem(REF_KEY) } catch { /* noop */ }
+}
+
+// Empty map on any failure (e.g. migration not applied yet): rewards are cosmetic, never block the map.
+export async function getInvitePerks(ids: string[]): Promise<Map<string, InvitePerk>> {
+  const perks = new Map<string, InvitePerk>()
+  const real = ids.filter(id => /^[0-9a-f-]{36}$/i.test(id)).slice(0, 300)
+  if (real.length === 0) return perks
+  const { data, error } = await supabase.rpc('invite_perks_for', { p_ids: real })
+  if (error) { console.warn('[referrals] perks failed', error.message); return perks }
+  for (const r of (data ?? []) as ({ id: string } & InvitePerk)[]) perks.set(r.id, { spotlight: r.spotlight, founder: r.founder })
+  return perks
 }
 
 export async function getInviteStats(): Promise<InviteStats | null> {
