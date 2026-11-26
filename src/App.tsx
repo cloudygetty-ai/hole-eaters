@@ -848,7 +848,7 @@ const DRIPS = [{ x: 18, h: 44 }, { x: 34, h: 26 }, { x: 50, h: 38 }, { x: 66, h:
 
 function Splash() {
   return (
-    <div className="he-splash" role="status" aria-label="Loading The Hole Eaters" style={{ position: 'fixed', inset: 0, background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+    <div className="he-splash" role="status" aria-label="Loading Hole Eaters" style={{ position: 'fixed', inset: 0, background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
       <style>{SPLASH_CSS}</style>
       <div style={{ position: 'relative', width: 240 }}>
         {/* Glow sits behind the image: a filter on the image itself would outline its black square */}
@@ -917,7 +917,7 @@ function Onboarding({ onComplete, onSignIn }: { onComplete: (p: Partial<Profile>
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: 'max(24px, env(safe-area-inset-top)) 24px 24px' }}>
       <style>{GCSS}</style>
       <div style={{ width: '100%', maxWidth: 400, marginTop: 24 }}>
-        {step === 0 && <img src="/brand/logo.webp" alt="The Hole Eaters" width={160} style={{ display: 'block', margin: '0 auto 24px', height: 'auto', mixBlendMode: 'lighten' }} />}
+        {step === 0 && <img src="/brand/logo.webp" alt="Hole Eaters" width={160} style={{ display: 'block', margin: '0 auto 24px', height: 'auto', mixBlendMode: 'lighten' }} />}
         <div style={{ display: 'flex', gap: 6, marginBottom: 32 }}>{steps.map((_, i) => (<div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= step ? C.accent : C.surf3, transition: 'background 0.3s' }} />))}</div>
         <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 24 }}>{steps[step].title}</div>
         {steps[step].content}
@@ -2212,7 +2212,7 @@ function AuthScreen({ onSuccess }: { onSuccess: () => void }) {
       <style>{GCSS}</style>
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ textAlign: 'center', marginBottom: 36 }}>
-          <img src="/brand/logo.webp" alt="The Hole Eaters" width={220} style={{ display: 'block', margin: '0 auto 8px', height: 'auto', mixBlendMode: 'lighten' }} />
+          <img src="/brand/logo.webp" alt="Hole Eaters" width={220} style={{ display: 'block', margin: '0 auto 8px', height: 'auto', mixBlendMode: 'lighten' }} />
           <div style={{ color: C.dim, fontSize: 13, marginTop: 6 }}>{mode === 'signin' ? 'Sign in to your account' : 'Create your account'}</div>
         </div>
 
@@ -2634,7 +2634,7 @@ function VersionScreen({ onClose }: { onClose: () => void }) {
       <div style={{ position: 'relative', background: C.surf2, borderRadius: '22px 22px 0 0', maxHeight: '80vh', overflow: 'auto', animation: 'slideUp 0.25s ease', padding: '20px 20px 40px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 18 }}>The Hole Eaters</div>
+            <div style={{ fontWeight: 800, fontSize: 18 }}>Hole Eaters</div>
             <div style={{ fontSize: 12, color: C.dim, fontFamily: FONT }}>v{APP_VERSION}</div>
           </div>
           <button onClick={onClose} style={{ color: C.dim, fontSize: 18 }}>✕</button>
@@ -3453,7 +3453,7 @@ export default function App() {
       <header role="banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0, zIndex: 200 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <img src="/brand/emblem.webp" alt="" width={28} height={28} style={{ mixBlendMode: 'lighten' }} />
-          <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: 1 }}>THE HOLE EATERS</div>
+          <div style={{ fontWeight: 800, fontSize: 14, letterSpacing: 1 }}>HOLE EATERS</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Ghost Mode Toggle */}
