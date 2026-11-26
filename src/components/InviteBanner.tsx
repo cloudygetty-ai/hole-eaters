@@ -24,7 +24,7 @@ export function InviteBanner({ name, theme }: { name?: string; theme: InviteThem
   const url = stats ? inviteUrl(stats.code) : 'https://www.hole-eaters.com/?utm_source=invite'
 
   const share = async () => {
-    const text = `${name ?? 'Someone'} wants you on Hole Eaters — the live cruising map for guys.`
+    const text = `${name ?? 'Someone'} wants you on Hole Eaters — the live cruising map for guys, girls, trans and nonbinary folks.`
     if (navigator.share) {
       await navigator.share({ title: 'Hole Eaters', text, url }).catch(() => {})
       return
@@ -39,7 +39,7 @@ export function InviteBanner({ name, theme }: { name?: string; theme: InviteThem
   return (
     <div style={{ background: theme.surf2, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 16, margin: '0 0 16px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
-        <div style={{ fontWeight: 700, fontSize: 14 }}>🔗 Invite guys nearby</div>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>🔗 Invite people nearby</div>
         {invited > 0 && <div style={{ fontSize: 12, color: theme.accent, fontFamily: theme.font }}>{invited} joined</div>}
       </div>
       <div style={{ fontSize: 12, color: theme.dim, marginBottom: 12, lineHeight: 1.5 }}>
