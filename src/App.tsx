@@ -391,7 +391,7 @@ function ChatScreen({ match, myId, other, onBack, myPrivacy = {} }: { match: Mat
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const say = (text: string) => { setNotice(text); if (noticeTimer.current) clearTimeout(noticeTimer.current); noticeTimer.current = setTimeout(() => setNotice(null), 6000) }
   const secureError = (e: unknown, what: string) => {
-    if (e instanceof NoKeysError) say(`🔒 ${other.name} needs to open Hole Eaters once before you can message him securely.`)
+    if (e instanceof NoKeysError) say(`🔒 ${other.name} needs to open Hole Eaters once before you can message them securely.`)
     else { console.error(`[chat] ${what} failed`, e); say(`${what} didn't send. Try again.`) }
   }
   // Private chat files → short-lived links. Re-signed every 50 min while the chat stays open.
@@ -3790,7 +3790,7 @@ export default function App() {
               if (error || !data) { console.error('[tap] start failed', error); showError("Tap didn't send. Try again."); return }
               try { await sendSecure((data as Match).id, user.id, other.id, { s: url }) }
               catch (e) {
-                if (e instanceof NoKeysError) showError(`🔒 ${other.name} needs to open Hole Eaters once before you can send him a tap.`)
+                if (e instanceof NoKeysError) showError(`🔒 ${other.name} needs to open Hole Eaters once before you can send them a tap.`)
                 else { console.error('[tap] send failed', e); showError("Tap didn't send. Try again.") }
                 return
               }

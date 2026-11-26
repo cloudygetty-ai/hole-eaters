@@ -43,7 +43,7 @@ export function TodCard({ prompt, fallback, mine, onReply, theme: t }: { prompt:
       </div>
       <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.4, color: t.text }}>{text}</div>
       <div style={{ fontSize: 11, color: t.muted, marginTop: 8 }}>
-        {mine ? 'Waiting on his answer…' : <>Your move — answer below, or <button onClick={onReply} style={{ color: t.accent, fontWeight: 700, fontSize: 11, padding: 0, textDecoration: 'underline' }}>send one back</button>.</>}
+        {mine ? 'Waiting on their answer…' : <>Your move — answer below, or <button onClick={onReply} style={{ color: t.accent, fontWeight: 700, fontSize: 11, padding: 0, textDecoration: 'underline' }}>send one back</button>.</>}
       </div>
     </div>
   )
