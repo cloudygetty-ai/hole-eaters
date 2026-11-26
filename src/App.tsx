@@ -932,7 +932,7 @@ function Onboarding({ onComplete, onSignIn }: { onComplete: (p: Partial<Profile>
             <input id="ob-age" value={age} onChange={e => setAge(e.target.value.replace(/\D/g, '').slice(0, 2))} placeholder="Age (18+)" type="number" inputMode="numeric" />
             {age !== '' && Number(age) < 18 && <div role="alert" style={{ marginTop: 8, fontSize: 13, color: V.emberUp }}>Hole Eaters is for adults 18 and over.</div>}
             <p style={{ fontSize: 13, color: V.smoke, lineHeight: 1.55, margin: '16px 0 22px' }}>
-              Hole Eaters is for guys 18 and over. By continuing you confirm you&rsquo;re 18+ and agree to our <a href="/terms" target="_blank" rel="noopener" style={{ color: V.brassUp }}>Terms</a> and <a href="/privacy" target="_blank" rel="noopener" style={{ color: V.brassUp }}>Privacy Policy</a>.
+              Hole Eaters is for everyone 18 and over. By continuing you confirm you&rsquo;re 18+ and agree to our <a href="/terms" target="_blank" rel="noopener" style={{ color: V.brassUp }}>Terms</a> and <a href="/privacy" target="_blank" rel="noopener" style={{ color: V.brassUp }}>Privacy Policy</a>.
             </p>
             <button className="he-ob-btn he-ob-btn--ember" disabled={!identityValid} onClick={() => identityValid && setStep(1)}>I&rsquo;m 18+ — let me in</button>
             <button className="he-ob-link" onClick={onSignIn}>Already have an account? <b>Sign in</b></button>
