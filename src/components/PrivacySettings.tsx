@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { emailAlertsAvailable, type Privacy } from '../lib/supabase'
 import { lockEnabled, setPin, clearPin } from '../lib/appLock'
 import { DeleteAccountSheet } from './DeleteAccount'
+import { BlockedPeople } from './SafetyActions'
 
 // Privacy settings screen. Every switch here is enforced on the server except the startup lock
 // (device-only by design) and photo blur (a viewing preference).
@@ -10,11 +11,14 @@ export interface PrivacyTheme { bg: string; surface: string; surf2: string; surf
 
 type Key = keyof Privacy
 
-export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, onChange, onNotifyPreviews, onGhost, onClose, onDeleted }: {
+export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, blockedIds, onUnblock, onBlock, onChange, onNotifyPreviews, onGhost, onClose, onDeleted }: {
   theme: PrivacyTheme
   privacy: Privacy
   notifyPreviews: boolean
   ghost: boolean
+  blockedIds: string[]
+  onUnblock: (id: string) => Promise<boolean>
+  onBlock: (id: string) => void
   onChange: (next: Privacy) => void
   onNotifyPreviews: (on: boolean) => void
   onGhost: (on: boolean) => void
@@ -23,6 +27,7 @@ export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, onCh
 }) {
   const [pinSheet, setPinSheet] = useState(false)
   const [deleteSheet, setDeleteSheet] = useState(false)
+  const [blockedSheet, setBlockedSheet] = useState(false)
   const [locked, setLocked] = useState(lockEnabled())
   const [canEmail, setCanEmail] = useState<boolean | null>(null)
   useEffect(() => { emailAlertsAvailable().then(setCanEmail) }, [])
@@ -87,6 +92,16 @@ export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, onCh
           <Row title="Video chat" sub="Disable video calls with you" on={!!privacy.video_off} onClick={() => flip('video_off')} last />
         </Section>
 
+        <Section title="Blocked">
+          <button onClick={() => setBlockedSheet(true)} style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '14px 0', textAlign: 'left' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 16, color: t.text }}>Blocked people</div>
+              <div style={{ fontSize: 13, color: t.muted, marginTop: 2 }}>{blockedIds.length === 0 ? "You haven't blocked anyone" : `${blockedIds.length} blocked. Tap to see them or unblock`}</div>
+            </div>
+            <span style={{ color: t.dim, fontSize: 22 }}>›</span>
+          </button>
+        </Section>
+
         <Section title="Limit insights">
           <Row title="Profile Insights" sub="Don't use who you view, like and message to show what you're into or how well others match you" on={!!privacy.hide_behavior_insights} onClick={() => flip('hide_behavior_insights')} />
           <Row title="Response" sub="Hide your reply rate from other members" on={!!privacy.hide_response_insight} onClick={() => flip('hide_response_insight')} />
@@ -109,6 +124,7 @@ export function PrivacySettings({ theme: t, privacy, notifyPreviews, ghost, onCh
         </button>
       </div>
       {pinSheet && <PinSetup theme={t} onDone={() => { setPinSheet(false); setLocked(lockEnabled()) }} />}
+      {blockedSheet && <BlockedPeople theme={t} ids={blockedIds} onUnblock={onUnblock} onBlock={onBlock} onClose={() => setBlockedSheet(false)} />}
       {deleteSheet && <DeleteAccountSheet theme={t} onDeleted={onDeleted} onCancel={() => setDeleteSheet(false)} />}
     </div>
   )

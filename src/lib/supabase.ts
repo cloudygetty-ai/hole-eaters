@@ -308,9 +308,20 @@ export async function ensureUserId(): Promise<string | null> {
 export async function blockUser(blocked: string) {
   return supabase.from('blocks').upsert({ blocked }, { onConflict: 'blocker,blocked', ignoreDuplicates: true })
 }
-export async function getBlockedIds(): Promise<string[]> {
-  const { data } = await supabase.from('blocks').select('blocked')
+// null = couldn't read the list (offline, signed out); callers keep what they had instead of wiping it
+export async function getBlockedIds(): Promise<string[] | null> {
+  const { data, error } = await supabase.from('blocks').select('blocked')
+  if (error) return null
   return (data ?? []).map(r => r.blocked as string)
+}
+export async function unblockUser(blocked: string) {
+  return supabase.from('blocks').delete().eq('blocked', blocked)
+}
+// Names and faces for the Blocked people list (profiles are readable by any member)
+export async function getProfileCards(ids: string[]) {
+  if (!ids.length) return { data: [] as Pick<Profile, 'id' | 'name' | 'emoji' | 'color' | 'photo_url'>[], error: null }
+  const { data, error } = await supabase.from('profiles').select('id,name,emoji,color,photo_url').in('id', ids)
+  return { data: (data ?? []) as Pick<Profile, 'id' | 'name' | 'emoji' | 'color' | 'photo_url'>[], error }
 }
 
 // Ghost posts are stored without a sender, so nobody can unmask them through the API

@@ -13,8 +13,8 @@ maplibregl.setWorkerUrl(mapWorkerUrl);
 import { ArrowUp, ChevronDown, Video, VideoOff } from 'lucide-react'
 import "maplibre-gl/dist/maplibre-gl.css";
 import { pushSupported, requestPushPermission, subscribeToPush, unsubscribeFromPush, isIosBrowserTab, notify, onInAppNotification } from './lib/push'
-import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, subscribeToMessages, uploadMedia, submitReport, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, getMyPrivate, savePrivacy, saveTimezone, getResponsiveness, getChatPrefs, type Privacy, ensureUserId, signChatMedia, blockUser, getBlockedIds, postGlobalMessage, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
-import type { Profile, Match, Message, ReportReason, ReportStatus, GlobalMessage } from './lib/supabase'
+import { supabase, savePushSubscription, deletePushSubscription, getLikesReceived, startConversation, isMutualMatch, signInAnon, signUpEmail, signInEmail, upgradeAnon, sendPasswordReset, logProfileView, getProfileViews, markMessagesRead, getUnreadCounts, upsertProfile, updateLocation, setOnline, getNearbyUsers, likeUser, getMatches, getMessages, subscribeToMessages, uploadMedia, getGlobalMessages, sendGlobalMessage, subscribeToGlobalChat, checkIsAdmin, getAdminStats, getAllProfiles, getReports, updateReportStatus, banUser, unbanUser, getBans, sendSignInLink, PROFILE_COLUMNS, getMyPrivate, savePrivacy, saveTimezone, getResponsiveness, getChatPrefs, type Privacy, ensureUserId, signChatMedia, blockUser, unblockUser, getBlockedIds, postGlobalMessage, getReviewSummary, getFlaggedReviews, moderateReview, type ReviewSummary, type FlaggedReview } from './lib/supabase'
+import type { Profile, Match, Message, ReportStatus, GlobalMessage } from './lib/supabase'
 import { claimStoredReferral, claimSignupSource } from './lib/referrals'
 import { logPromoVisit } from './lib/promo'
 import { PromoStats } from './components/PromoStats'
@@ -31,6 +31,7 @@ import { TodCard, TodPicker, type TodTheme } from './components/TruthOrDare'
 import { pickTod, todFallback, todKey, type TodKind, type TodLevel } from './lib/truthOrDare'
 import { ensureDeviceKey } from './lib/e2ee'
 import { PrivacySettings, LockScreen, type PrivacyTheme } from './components/PrivacySettings'
+import { ReportForm, SafetySheet, type SafetyTarget, type SafetyTheme } from './components/SafetyActions'
 import { Insights } from './components/Insights'
 import { ProfileInsightCard } from './components/ProfileInsight'
 import { PickedForYou, SecondChances } from './components/Discover'
@@ -64,6 +65,7 @@ const DT: DetailsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, b
 const FONT = "'DM Mono', 'Fira Code', monospace"
 const TT: TodTheme = { accent: C.accent, surf2: C.surf2, surf3: C.surf3, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim }
 const PT: PrivacyTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green }
+const SFT: SafetyTheme = { surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent }
 const LT: LiveTheme = { surface: C.surface, surf2: C.surf2, surf3: C.surf3, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green }
 const ST: SpotsTheme = { bg: C.bg, surface: C.surface, surf2: C.surf2, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, accent: C.accent, green: C.green, amber: C.amber }
 const RT: ReviewsTheme = { accent: C.accent, surf3: C.surf3, border: C.border, border2: C.border2, text: C.text, muted: C.muted, dim: C.dim, green: C.green, amber: C.amber, orange: C.orange, red: '#ef4444' }
@@ -250,10 +252,6 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
   const [showTap, setShowTap] = useState(false)
   const [tab, setTab] = useState<'profile' | 'reviews' | 'report'>('profile')
   const [liked, setLiked] = useState(false)
-  const [reportReason, setReportReason] = useState<ReportReason>('fake_profile')
-  const [reportDetails, setReportDetails] = useState('')
-  const [reportSent, setReportSent] = useState(false)
-  const [blocked, setBlocked] = useState(false)
   const [reviewSummary, setReviewSummary] = useState<ReviewSummary | null>(null)
   const [replyRate, setReplyRate] = useState<number | null>(null)
   useEffect(() => { if (!user.isSeed && myId) getResponsiveness(user.id).then(setReplyRate) }, [user.id, user.isSeed, myId])
@@ -324,25 +322,10 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
           )}
           {tab === 'report' && (
             <div style={{ padding: '4px 0' }}>
-              {reportSent ? (
-                <div style={{ textAlign: 'center', padding: '20px 0' }}><div style={{ fontSize: 36, marginBottom: 8 }}>✅</div><p style={{ fontWeight: 700 }}>Report submitted</p></div>
+              {user.isSeed || !myId ? (
+                <p style={{ textAlign: 'center', color: C.muted, fontSize: 14, padding: '20px 0' }}>Reports aren't available for this profile.</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={{ fontSize: 13, color: C.muted }}>Why are you reporting {user.name}?</div>
-                  <select value={reportReason} onChange={e => setReportReason(e.target.value as ReportReason)} style={{ background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 14, outline: 'none' }}>
-                    <option value="fake_profile">Fake Profile</option>
-                    <option value="harassment">Harassment</option>
-                    <option value="underage">Underage</option>
-                    <option value="spam">Spam</option>
-                    <option value="inappropriate_photo">Inappropriate Photo</option>
-                    <option value="other">Other</option>
-                  </select>
-                  <textarea value={reportDetails} onChange={e => setReportDetails(e.target.value)} placeholder="Additional details (optional)" rows={3} style={{ background: C.surf3, border: `1px solid ${C.border2}`, borderRadius: 10, padding: '10px 14px', color: C.text, fontSize: 14, outline: 'none', resize: 'none' }} />
-                  <button onClick={async () => { if (!myId || user.isSeed) return; await submitReport(myId, user.id, reportReason, reportDetails); setReportSent(true) }} style={{ padding: '12px', borderRadius: 12, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444', fontWeight: 700, fontSize: 14 }}>Submit Report</button>
-                  <button onClick={() => { if (user.isSeed) return; setBlocked(true); onBlock(user.id); setTimeout(onClose, 400) }} disabled={blocked} style={{ padding: '12px', borderRadius: 12, background: blocked ? C.surf3 : 'rgba(107,114,128,0.15)', border: `1px solid ${blocked ? C.border : 'rgba(107,114,128,0.4)'}`, color: blocked ? C.dim : C.muted, fontWeight: 700, fontSize: 14 }}>
-                    {blocked ? '✓ Blocked' : '🚫 Block User'}
-                  </button>
-                </div>
+                <ReportForm theme={SFT} myId={myId} target={{ id: user.id, name: user.name }} onBlock={() => { onBlock(user.id); setTimeout(onClose, 400) }} />
               )}
             </div>
           )}
@@ -373,7 +356,8 @@ function ProfileDrawer({ user, myId, onClose, onLike, onMessage, onTap, onBlock,
 }
 
 // ─── Chat Screen ──────────────────────────────────────────────────────────────
-function ChatScreen({ match, myId, other, onBack, myPrivacy = {} }: { match: Match; myId: string; other: Profile; onBack: () => void; myPrivacy?: Privacy }) {
+function ChatScreen({ match, myId, other, onBack, onBlock, myPrivacy = {} }: { match: Match; myId: string; other: Profile; onBack: () => void; onBlock: (id: string) => void; myPrivacy?: Privacy }) {
+  const [safetyOpen, setSafetyOpen] = useState(false)
   // Video calls only when neither of you turned them off; received photos blurred until tapped if you asked
   const [videoAllowed, setVideoAllowed] = useState(!myPrivacy.video_off)
   useEffect(() => { if (!myPrivacy.video_off) getChatPrefs(other.id).then(p => setVideoAllowed(p.video)) }, [other.id, myPrivacy.video_off])
@@ -574,7 +558,18 @@ function ChatScreen({ match, myId, other, onBack, myPrivacy = {} }: { match: Mat
           onClick={() => setVideoCall(v => !v)}
           style={{ width: 36, height: 36, borderRadius: 10, background: videoCall ? C.accent : C.surf2, border: `1px solid ${videoCall ? C.accent : C.border2}`, color: videoCall ? '#fff' : C.muted, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
         >📹</button>}
+        <button
+          aria-label={`Report or block ${other.name}`}
+          onClick={() => setSafetyOpen(true)}
+          style={{ width: 36, height: 36, borderRadius: 10, background: C.surf2, border: `1px solid ${C.border2}`, color: C.muted, fontSize: 18, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+        ><span aria-hidden="true">⋯</span></button>
       </div>
+      {safetyOpen && (
+        <SafetySheet theme={SFT} myId={myId} target={{ id: other.id, name: other.name }} onClose={() => setSafetyOpen(false)}
+          context="Reported from a 1:1 chat"
+          hint="Chats are end-to-end encrypted, so our moderators can't read this one. Tell us what happened in the details."
+          onBlock={id => { onBlock(id); onBack() }} />
+      )}
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {messages.length === 0 && <div style={{ textAlign: 'center', color: C.dim, fontSize: 13, marginTop: 40 }}><div style={{ fontSize: 30, marginBottom: 8 }}>💬</div>Say something, or send a 🍑 sticker.</div>}
         <div style={{ textAlign: 'center', fontSize: 11, color: C.dim, margin: '4px 0 10px' }}>🔒 Messages, photos and voice notes are end-to-end encrypted. Only you two can read them.</div>
@@ -686,9 +681,12 @@ function ChatScreen({ match, myId, other, onBack, myPrivacy = {} }: { match: Mat
 }
 
 // ─── Matches Screen ───────────────────────────────────────────────────────────
-function MatchesScreen({ userId, onOpenChat, onClearUnread, onOpenProfile }: { userId: string; onOpenChat: (match: Match, other: Profile) => void; onClearUnread: (matchId: string) => void; onOpenProfile: (p: Profile) => void }) {
-  const [matches, setMatches] = useState<any[]>([])
-  const [likers, setLikers] = useState<{ from_user: string; created_at: string; from_profile: Profile | null }[]>([])
+function MatchesScreen({ userId, blockedIds, onOpenChat, onClearUnread, onOpenProfile }: { userId: string; blockedIds: Set<string>; onOpenChat: (match: Match, other: Profile) => void; onClearUnread: (matchId: string) => void; onOpenProfile: (p: Profile) => void }) {
+  const [allMatches, setMatches] = useState<any[]>([])
+  const [allLikers, setLikers] = useState<{ from_user: string; created_at: string; from_profile: Profile | null }[]>([])
+  // Chats and likes from people you blocked leave your inbox (they come back if you unblock)
+  const matches = allMatches.filter(m => !blockedIds.has(m.user_a === userId ? m.user_b : m.user_a))
+  const likers = allLikers.filter(l => !blockedIds.has(l.from_user))
   const [loading, setLoading] = useState(true)
   useEffect(() => {
     setLoading(true)
@@ -1201,8 +1199,12 @@ function useWebRTC(roomId: string, myProfile: Partial<Profile>, enabled: boolean
   return { streams, localStream, micOn, camOn, toggleMic, toggleCam, error }
 }
 
-function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoom; myProfile: Partial<Profile>; onClose: () => void; onSend: (text: string) => void }) {
+function PulseRoomOverlay({ room, myProfile, onClose, onSend, blockedIds, onBlock }: { room: PulseRoom; myProfile: Partial<Profile>; onClose: () => void; onSend: (text: string) => void; blockedIds: Set<string>; onBlock: (id: string) => void }) {
   const [input, setInput] = useState('')
+  // The server stops sending a blocked person's messages; this hides them at once instead of at the next refresh
+  const roomMessages = room.messages.filter(m => !blockedIds.has(m.senderId))
+  const [safety, setSafety] = useState<(SafetyTarget & { said: string }) | null>(null)
+  const canReport = !!myProfile.id && myProfile.id !== 'anon'
   const [timeLeft, setTimeLeft] = useState(0)
   const [videoOn, setVideoOn] = useState(false)
   const [confirmClose, setConfirmClose] = useState(false)
@@ -1226,7 +1228,7 @@ function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoo
     return () => clearInterval(id)
   }, [room.expiresAt])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [room.messages.length])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [roomMessages.length])
 
   const fmt = (ms: number) => {
     const s = Math.floor(ms / 1000)
@@ -1297,20 +1299,22 @@ function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoo
 
         {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 200 }}>
-          {room.messages.length === 0 && (
+          {roomMessages.length === 0 && (
             <button onClick={() => inputRef.current?.focus()} style={{ margin: 'auto', padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, textAlign: 'center', cursor: 'text' }}>
               <span aria-hidden style={{ fontSize: 30, marginBottom: 4 }}>📡</span>
               <span style={{ fontSize: 18, fontWeight: 800, color: C.text }}>Room is live.</span>
               <span style={{ fontSize: 14, color: C.muted }}>Be the first — say something.</span>
             </button>
           )}
-          {room.messages.map(msg => {
+          {roomMessages.map(msg => {
             const mine = msg.senderId === myProfile.id
             return (
               <div key={msg.id} style={{ display: 'flex', gap: 8, flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end' }}>
                 <div style={{ width: 28, height: 28, borderRadius: '50%', background: `${msg.senderColor}22`, border: `1.5px solid ${msg.senderColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>{msg.senderEmoji}</div>
                 <div style={{ maxWidth: '70%' }}>
-                  {!mine && <div style={{ fontSize: 10, color: msg.senderColor, marginBottom: 2, marginLeft: 2, fontWeight: 700 }}>{msg.senderName}</div>}
+                  {!mine && (canReport
+                    ? <button onClick={() => setSafety({ id: msg.senderId, name: msg.senderName || 'this member', said: msg.content })} aria-label={`${msg.senderName || 'Member'}: report or block`} style={{ display: 'block', padding: 0, fontSize: 10, color: msg.senderColor, marginBottom: 2, marginLeft: 2, fontWeight: 700 }}>{msg.senderName}</button>
+                    : <div style={{ fontSize: 10, color: msg.senderColor, marginBottom: 2, marginLeft: 2, fontWeight: 700 }}>{msg.senderName}</div>)}
                   <div style={{ background: mine ? C.accent : C.surf3, borderRadius: mine ? '14px 14px 4px 14px' : '14px 14px 14px 4px', padding: '9px 13px', fontSize: 14, lineHeight: 1.4 }}>{msg.content}</div>
                 </div>
               </div>
@@ -1318,6 +1322,11 @@ function PulseRoomOverlay({ room, myProfile, onClose, onSend }: { room: PulseRoo
           })}
           <div ref={bottomRef} />
         </div>
+
+        {safety && (
+          <SafetySheet theme={SFT} myId={myProfile.id!} target={safety} onClose={() => setSafety(null)} onBlock={onBlock}
+            context={`Reported from Pulse Room "${room.name.slice(0, 60)}". Their message: "${safety.said.slice(0, 300)}"`} />
+        )}
 
         {/* Input */}
         <form onSubmit={e => { e.preventDefault(); send() }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px calc(14px + env(safe-area-inset-bottom))', borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
@@ -1601,7 +1610,7 @@ function MapScreen({ myProfile, nearby, myPos, onMovePin, onSelectUser, isGhost,
     if (!mapRef.current || !mapReady) return
     nearbyMarkersRef.current.forEach(m => m.remove())
     nearbyMarkersRef.current.clear()
-    // Locations are rounded server-side (~100 m), so several people can share one point; fan them out
+    // Locations are snapped server-side to a ~200 m grid, so several people can share one point; fan them out
     const stackCount = new Map<string, number>()
     nearby.forEach((u) => {
       let lat: number, lng: number
@@ -1868,9 +1877,12 @@ const WH_CSS = `
 `
 
 // ─── Whore-izon Global Chat ───────────────────────────────────────────────────
-function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boolean }) {
+function GlobalChat({ userId, isGhost, blockedIds, onBlock }: { userId: string | null; isGhost: boolean; blockedIds: Set<string>; onBlock: (id: string) => void }) {
   const onlineIds = useOnlineIds()
-  const [messages, setMessages] = useState<GlobalMessage[]>([])
+  const [allMessages, setMessages] = useState<GlobalMessage[]>([])
+  // People you blocked drop out of the room for you. Ghost posts carry no sender, so they can't be matched.
+  const messages = useMemo(() => allMessages.filter(m => !m.sender_id || !blockedIds.has(m.sender_id)), [allMessages, blockedIds])
+  const [safety, setSafety] = useState<(SafetyTarget & { said: string }) | null>(null)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [onlineCount, setOnlineCount] = useState(0)
@@ -2021,23 +2033,25 @@ function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boole
 
           // Other user
           const sColor = sender?.color ?? WH.neon
+          const canAct = !!userId && !!msg.sender_id
+          const openSafety = () => { if (canAct) setSafety({ id: msg.sender_id!, name: sender?.name || 'this member', said: displayContent }) }
           return (
             <div key={msg.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-              {/* Avatar */}
+              {/* Avatar: tap to report or block */}
               <div style={{ width: 30, flexShrink: 0 }}>
                 {showHeader && (
-                  <div style={{ width: 30, height: 30, borderRadius: '50%', background: `${sColor}18`, border: `1.5px solid ${sColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, overflow: 'hidden', boxShadow: `0 0 8px ${sColor}44` }}>
+                  <button onClick={openSafety} disabled={!canAct} tabIndex={-1} aria-hidden="true" style={{ width: 30, height: 30, padding: 0, borderRadius: '50%', background: `${sColor}18`, border: `1.5px solid ${sColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, overflow: 'hidden', boxShadow: `0 0 8px ${sColor}44`, cursor: canAct ? 'pointer' : 'default' }}>
                     {sender?.photo_url ? <MediaImg src={sender.photo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : sender?.emoji ?? '👤'}
-                  </div>
+                  </button>
                 )}
               </div>
 
               {/* Bubble */}
               <div style={{ maxWidth: '72%' }}>
                 {showHeader && (
-                  <div style={{ fontSize: 10, color: sColor, fontWeight: 800, marginBottom: 3, fontFamily: FONT, letterSpacing: 0.5, textShadow: `0 0 6px ${sColor}66` }}>
+                  <button onClick={openSafety} disabled={!canAct} aria-label={canAct ? `${sender?.name ?? 'Member'}: report or block` : undefined} style={{ display: 'block', padding: 0, fontSize: 10, color: sColor, fontWeight: 800, marginBottom: 3, fontFamily: FONT, letterSpacing: 0.5, textShadow: `0 0 6px ${sColor}66`, cursor: canAct ? 'pointer' : 'default' }}>
                     {sender?.name?.toUpperCase() ?? 'ANONYMOUS'}
-                  </div>
+                  </button>
                 )}
                 <div style={{
                   background: WH.surf2,
@@ -2055,6 +2069,11 @@ function GlobalChat({ userId, isGhost }: { userId: string | null; isGhost: boole
         })}
         <div ref={bottomRef} />
       </div>
+
+      {safety && userId && (
+        <SafetySheet theme={SFT} myId={userId} target={safety} onClose={() => setSafety(null)} onBlock={onBlock}
+          context={`Reported from Whore-izon. Their message: "${safety.said.slice(0, 300)}"`} />
+      )}
 
       {/* Input bar */}
       <div style={{ position: 'relative', zIndex: 2, flexShrink: 0 }}>
@@ -2889,6 +2908,11 @@ function ProfileEditor({ profile, onSave, onClose }: { profile: Partial<Profile>
 // ─── Root ─────────────────────────────────────────────────────────────────────
 type Screen = 'map' | 'list' | 'videos' | 'matches' | 'global' | 'profile'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+function saveBlockedCopy(ids: Set<string>) {
+  try { localStorage.setItem('he_blocked_ids', JSON.stringify([...ids])) } catch { /* private mode */ }
+}
+
 export default function App() {
   useEffect(() => { logPromoVisit() }, []) // ?src= links that skip the landing (signed-in visitors)
   const [user, setUser] = useState<User | null>(null)
@@ -2939,18 +2963,30 @@ export default function App() {
     ensureDeviceKey(user.id).catch(e => console.warn('[e2ee] key setup failed', e))
   }, [user?.id, myProfile?.name])
 
-  // Blocks live on the server now; pull them in, and upload any older ones that were only saved on this phone
+  // Blocks live on the server; this phone keeps a copy so the map hides them before the list loads.
+  // Older versions saved blocks only on the phone: upload those once, then the server's list wins,
+  // so an Unblock (here or on another phone) isn't undone by a stale copy.
   useEffect(() => {
     if (!user?.id) return
-    getBlockedIds().then(serverIds => {
+    let live = true
+    getBlockedIds().then(async serverIds => {
+      if (!serverIds || !live) return // couldn't read it: keep the copy we have
       const server = new Set(serverIds)
-      setBlockedIds(prev => {
-        prev.forEach(id => { if (!server.has(id) && /^[0-9a-f-]{36}$/i.test(id)) blockUser(id) })
-        const next = new Set([...prev, ...server])
-        try { localStorage.setItem('he_blocked_ids', JSON.stringify([...next])) } catch { /* private mode */ }
-        return next
-      })
+      let synced = false
+      try { synced = localStorage.getItem('he_blocks_synced') === '1' } catch { /* private mode */ }
+      if (!synced) {
+        let local: string[] = []
+        try { local = JSON.parse(localStorage.getItem('he_blocked_ids') ?? '[]') } catch { /* bad copy */ }
+        const legacy = local.filter(id => typeof id === 'string' && UUID_RE.test(id) && !server.has(id))
+        const results = await Promise.all(legacy.map(id => blockUser(id)))
+        legacy.forEach(id => server.add(id))
+        if (results.every(r => !r.error)) { try { localStorage.setItem('he_blocks_synced', '1') } catch { /* private mode */ } }
+      }
+      if (!live) return
+      saveBlockedCopy(server)
+      setBlockedIds(server)
     })
+    return () => { live = false }
   }, [user?.id])
 
   const handleBlock = (id: string) => {
@@ -2958,10 +2994,22 @@ export default function App() {
     setBlockedIds(prev => {
       const next = new Set(prev)
       next.add(id)
-      localStorage.setItem('he_blocked_ids', JSON.stringify([...next]))
+      saveBlockedCopy(next)
       return next
     })
     setSelectedUser(null)
+  }
+
+  const handleUnblock = async (id: string): Promise<boolean> => {
+    const { error } = await unblockUser(id)
+    if (error) { console.error('[block] unblock failed', error); return false }
+    setBlockedIds(prev => {
+      const next = new Set(prev)
+      next.delete(id)
+      saveBlockedCopy(next)
+      return next
+    })
+    return true
   }
 
   const handlePass = (id: string) => {
@@ -3467,7 +3515,7 @@ export default function App() {
       }} />
   )
   if (!(authReady && profileReady && splashMinDone)) return <Splash />
-  if (activeMatch) return <ChatScreen match={activeMatch.match} myId={user!.id} other={activeMatch.other} onBack={() => setActiveMatch(null)} myPrivacy={myProfile?.privacy ?? {}} />
+  if (activeMatch) return <ChatScreen match={activeMatch.match} myId={user!.id} other={activeMatch.other} onBack={() => setActiveMatch(null)} onBlock={handleBlock} myPrivacy={myProfile?.privacy ?? {}} />
   if (showAuth) return <AuthScreen onSuccess={() => setShowAuth(false)} />
   if (!myProfile?.name) return <Onboarding onComplete={handleOnboardingComplete} onSignIn={() => setShowAuth(true)} />
 
@@ -3610,7 +3658,7 @@ export default function App() {
           )
         })()}
         {screen === 'matches' && user && (
-          <MatchesScreen userId={user.id} onOpenProfile={(p) => setSelectedUser(p)} onOpenChat={(match, other) => setActiveMatch({ match, other })} onClearUnread={(id) => setUnreadCounts(prev => { const n = {...prev}; delete n[id]; return n })} />
+          <MatchesScreen userId={user.id} blockedIds={blockedIds} onOpenProfile={(p) => setSelectedUser(p)} onOpenChat={(match, other) => setActiveMatch({ match, other })} onClearUnread={(id) => setUnreadCounts(prev => { const n = {...prev}; delete n[id]; return n })} />
         )}
         {screen === 'videos' && (needsAccount
           ? <AccountGate theme={VT} title="Videos are members-only." body="Add an email to watch and post videos. Still free, still discreet." onCreate={() => setShowAuth(true)} />
@@ -3618,7 +3666,7 @@ export default function App() {
         )}
         {screen === 'global' && (needsAccount
           ? <AccountGate theme={VT} title="Whore-izon is members-only." body="Add an email to read and post in the open chat. Still free, still discreet." onCreate={() => setShowAuth(true)} />
-          : <GlobalChat userId={user?.id ?? null} isGhost={isGhost} />
+          : <GlobalChat userId={user?.id ?? null} isGhost={isGhost} blockedIds={blockedIds} onBlock={handleBlock} />
         )}
         {screen === 'profile' && (
           <div style={{ overflowY: 'auto' }}>
@@ -3850,6 +3898,7 @@ export default function App() {
       {showInsights && <Insights theme={PT} onClose={() => setShowInsights(false)} />}
       {showPrivacy && (
         <PrivacySettings theme={PT} privacy={myProfile?.privacy ?? {}} notifyPreviews={!!myProfile?.notify_previews} ghost={isGhost}
+          blockedIds={[...blockedIds].filter(id => UUID_RE.test(id))} onUnblock={handleUnblock} onBlock={handleBlock}
           onChange={handlePrivacyChange} onNotifyPreviews={on => handleProfileSave({ notify_previews: on })} onGhost={setIsGhost}
           onClose={() => setShowPrivacy(false)}
           onDeleted={async () => {
@@ -3885,7 +3934,7 @@ export default function App() {
 
       {/* Pulse Room overlay */}
       {activePulseRoom && Date.now() < activePulseRoom.expiresAt && myProfile && (
-        <PulseRoomOverlay room={activePulseRoom} myProfile={{ ...myProfile, id: user?.id ?? 'anon' }} onClose={() => pulse.close()} onSend={handlePulseSend} />
+        <PulseRoomOverlay room={activePulseRoom} myProfile={{ ...myProfile, id: user?.id ?? 'anon' }} onClose={() => pulse.close()} onSend={handlePulseSend} blockedIds={blockedIds} onBlock={handleBlock} />
       )}
 
       {/* Error toasts */}
