@@ -53,7 +53,14 @@ test('1:1 chat: block asks first, then leaves the chat', async ({ browser }) => 
   await page.getByRole('button', { name: '🚫 Block HimTest' }).click()
   await expect(page.getByText('Block HimTest?')).toBeVisible()
   expect(backend.t('blocks')).toHaveLength(0)
-  await page.getByRole('button', { name: 'Block', exact: true }).click()
+  const confirm = page.getByRole('button', { name: 'Block', exact: true })
+  // Nothing may sit on top of the confirm button where a finger lands
+  expect(await confirm.evaluate(el => {
+    const r = el.getBoundingClientRect()
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+    return hit && (hit === el || el.contains(hit)) ? 'on top' : `covered by <${hit?.tagName}> "${hit?.textContent?.slice(0, 30)}" ${JSON.stringify(hit?.getBoundingClientRect())}; button ${JSON.stringify(r)}`
+  })).toBe('on top')
+  await confirm.click()
   await expect.poll(() => backend.t('blocks').map(b => b.blocked)).toEqual([HIM.id])
   await expect(page.getByPlaceholder('Say something...')).toHaveCount(0)
 })

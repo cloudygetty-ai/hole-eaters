@@ -35,6 +35,7 @@ function reportDetails(context: string | undefined, text: string): string | unde
 
 const btn = (bg: string, border: string, color: string) => ({ padding: '12px', borderRadius: 12, background: bg, border: `1px solid ${border}`, color, fontWeight: 700, fontSize: 14 }) as const
 const RED = '#ef4444'
+const STACK = { display: 'flex', flexDirection: 'column', gap: 10 } as const
 
 /** Reason + details + Submit. With `onBlock`, also offers Block, before or after the report goes. */
 export function ReportForm({ theme: t, myId, target, context, hint, onBlock }: {
@@ -100,24 +101,25 @@ export function SafetySheet({ theme: t, myId, target, context, hint, onBlock, on
   // which would otherwise trap a position:fixed overlay inside them.
   return createPortal(
     <div role="dialog" aria-label={`Report or block ${target.name}`} style={{ position: 'fixed', inset: 0, zIndex: 950, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'flex-end' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxHeight: '85vh', overflowY: 'auto', background: t.surface, borderRadius: '22px 22px 0 0', padding: '20px 20px calc(24px + env(safe-area-inset-bottom))', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {step === 'menu' && <>
+      {/* Plain block layout like the delete-account sheet; only the tall report form scrolls */}
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', background: t.surface, borderRadius: '22px 22px 0 0', padding: '20px 20px calc(24px + env(safe-area-inset-bottom))', ...(step === 'report' ? { maxHeight: '85vh', overflowY: 'auto' } : {}) }}>
+        {step === 'menu' && <div style={STACK}>
           <div style={{ fontWeight: 800, fontSize: 18, color: t.text, marginBottom: 4 }}>{target.name}</div>
           <button onClick={() => setStep('report')} style={btn('rgba(239,68,68,0.12)', 'rgba(239,68,68,0.35)', RED)}>🚩 Report {target.name}</button>
           <button onClick={() => setStep('block')} style={btn(t.surf3, t.border2, t.text)}>🚫 Block {target.name}</button>
           <button onClick={onClose} style={{ padding: 12, color: t.dim, fontWeight: 700, fontSize: 14 }}>Cancel</button>
-        </>}
-        {step === 'report' && <>
+        </div>}
+        {step === 'report' && <div style={STACK}>
           <div style={{ fontWeight: 800, fontSize: 18, color: t.text, marginBottom: 4 }}>Report {target.name}</div>
           <ReportForm theme={t} myId={myId} target={target} context={context} hint={hint} onBlock={block} />
           <button onClick={onClose} style={{ padding: 12, color: t.dim, fontWeight: 700, fontSize: 14 }}>Done</button>
-        </>}
+        </div>}
         {step === 'block' && <>
           <div style={{ fontWeight: 800, fontSize: 18, color: t.text }}>Block {target.name}?</div>
-          <div style={{ fontSize: 13, color: t.muted, lineHeight: 1.55 }}>
+          <div style={{ fontSize: 13, color: t.muted, lineHeight: 1.55, marginTop: 8 }}>
             You disappear from each other's map, and they can't message, like or review you. They aren't told. You can unblock them any time in Me → Privacy settings → Blocked people.
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
             <button onClick={onClose} style={{ ...btn(t.surf3, t.border2, t.text), flex: 1 }}>Cancel</button>
             <button onClick={block} style={{ ...btn(RED, RED, '#fff'), flex: 1, fontWeight: 800 }}>Block</button>
           </div>
