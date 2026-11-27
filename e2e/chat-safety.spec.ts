@@ -58,9 +58,13 @@ test('1:1 chat: block asks first, then leaves the chat', async ({ browser }) => 
   expect(await confirm.evaluate(el => {
     const r = el.getBoundingClientRect()
     const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
-    return hit && (hit === el || el.contains(hit)) ? 'on top' : `covered by <${hit?.tagName}> "${hit?.textContent?.slice(0, 30)}" ${JSON.stringify(hit?.getBoundingClientRect())}; button ${JSON.stringify(r)}`
+    const vv = window.visualViewport
+    return hit && (hit === el || el.contains(hit)) ? 'on top' : `covered by <${hit?.tagName}> "${hit?.textContent?.slice(0, 30)}"; button ${JSON.stringify(r)}; visual viewport ${vv?.offsetTop}/${vv?.height}/${vv?.scale}`
   })).toBe('on top')
-  await confirm.click()
+  // The button sits at the very bottom of the screen. Under Pixel 7 emulation Playwright scrolls the
+  // visual viewport to reach it and then runs its own hit check in the wrong coordinates, blaming the
+  // text above. The check just above proves nothing covers the button, so skip Playwright's.
+  await confirm.click({ force: true })
   await expect.poll(() => backend.t('blocks').map(b => b.blocked)).toEqual([HIM.id])
   await expect(page.getByPlaceholder('Say something...')).toHaveCount(0)
 })
