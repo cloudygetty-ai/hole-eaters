@@ -14,13 +14,14 @@ export interface FeedVideo {
   approved_at: string
   created_at: string
   status: VideoStatus
+  source: 'post' | 'profile'
   url: string
   uploader?: { id: string; name: string; emoji: string; color: string; photo_url: string | null } | null
 }
 
 const PAGE = 8
 const SIGNED_TTL_S = 3600
-const SELECT = 'id, uploader_id, storage_path, caption, tags, view_count, approved_at, created_at, status'
+const SELECT = 'id, uploader_id, storage_path, caption, tags, view_count, approved_at, created_at, status, source'
 
 export class VideoApiError extends Error {}
 
@@ -38,13 +39,20 @@ type Row = Omit<FeedVideo, 'url' | 'uploader'> & { storage_path: string }
 
 async function sign(rows: Row[]): Promise<FeedVideo[]> {
   if (!rows.length) return []
+  // Feed posts live in the private `videos` bucket; profile videos (source='profile') in the public `media` bucket.
+  const posts = rows.filter(r => r.source !== 'profile')
   const [{ data: signed }, { data: profiles }] = await Promise.all([
-    supabase.storage.from('videos').createSignedUrls(rows.map(r => r.storage_path), SIGNED_TTL_S),
+    posts.length ? supabase.storage.from('videos').createSignedUrls(posts.map(r => r.storage_path), SIGNED_TTL_S) : Promise.resolve({ data: [] as { signedUrl: string }[] }),
     supabase.from('profiles').select('id, name, emoji, color, photo_url').in('id', [...new Set(rows.map(r => r.uploader_id))]),
   ])
+  const postUrl = new Map(posts.map((r, i) => [r.id, signed?.[i]?.signedUrl ?? '']))
   const byId = new Map((profiles ?? []).map(p => [p.id, p]))
   return rows
-    .map((r, i) => ({ ...r, url: signed?.[i]?.signedUrl ?? '', uploader: byId.get(r.uploader_id) ?? null }))
+    .map(r => ({
+      ...r,
+      url: r.source === 'profile' ? supabase.storage.from('media').getPublicUrl(r.storage_path).data.publicUrl : postUrl.get(r.id) ?? '',
+      uploader: byId.get(r.uploader_id) ?? null,
+    }))
     .filter(v => v.url)
 }
 
